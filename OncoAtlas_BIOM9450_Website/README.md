@@ -44,7 +44,7 @@ OncoAtlas_BIOM9450_Website/
 ├── config/config.php          Local MySQL connection settings
 ├── database/sample_data.sql   ORIGINAL PROVIDED SQL; UNCHANGED
 ├── database/upload_example.tsv A synthetic TSV for import testing
-├── tools/setup_demo_passwords.php
+├── database/demo_password1234.sql Fixed teaching demo passwords (apply after main SQL)
 └── docs/
     ├── preview_login_desktop.png  Login design preview
     ├── preview_login_mobile.png   Mobile design preview
@@ -74,26 +74,17 @@ Check which PHP binary is running: `php -v`. Check MySQL driver: `php -m | grep 
    Do not rerun the dump in a populated `cancer_portal` database; it contains plain `CREATE TABLE` and `INSERT` statements, which will conflict with existing tables/data. **The included source SQL was not rewritten.**
 
 3. Open `config/config.php` and change `db_host`, `db_port`, `db_user`, and `db_pass` to match **your own local MySQL connection**. The file ships with common local defaults (`127.0.0.1`, port `3306`, user `root`, blank password). A blank password is only appropriate for an isolated, local educational environment.
-4. **Generate login passwords** for the three accounts already present in your SQL file. From the extracted project directory, run:
-
-   ```bash
-   php tools/setup_demo_passwords.php
-   ```
-
-   This updates *only the `Password` hash for the existing sample user accounts*. It prints three newly generated passwords **once**; keep them private. Do not paste them into reports or public repositories. If your terminal `php` lacks `pdo_mysql`, use your local web stack’s PHP CLI executable instead, e.g. `/Applications/XAMPP/xamppfiles/bin/php tools/setup_demo_passwords.php` if that matches your installation.
-
+4. **Set the three fixed teaching-account passwords** in MySQL Workbench: open `database/demo_password1234.sql` and execute it **once**, after importing the original `sample_data.sql`. The script changes only `AppUser.Password` for the three sample accounts. It does **not** rewrite cancer data, create accounts or require a PHP setup script.
 5. **Open the site:** in XAMPP/MAMP go to `http://localhost/OncoAtlas_BIOM9450_Website/` (adjust the host/port as required). Or run `php -S 127.0.0.1:8000 router.php` in the project directory and open `http://127.0.0.1:8000/`.
-6. Sign in with one of the sample emails below and its **generated** password:
+6. **Log in** using any of the following local demonstration accounts:
 
-   | Role | Sample email | Access |
+   | Role | Email | Password |
    |---|---|---|
-   | Oncologist | `oncologist@example.test` | Patients, mutation search, upload, cohorts |
-   | Researcher | `researcher@example.test` | Same as oncologist, plus analytics |
-   | Patient | `patient@example.test` | Only linked profile and prediction history |
+   | Oncologist | `oncologist@example.test` | `password1234` |
+   | Researcher | `researcher@example.test` | `password1234` |
+   | Patient | `patient@example.test` | `password1234` |
 
-The source SQL contains existing bcrypt hashes, but their plaintext passwords were **not supplied**. The setup script deliberately replaces demo account password hashes rather than pretending to know those passwords.
-
-In the group's database package (`biom_project/database/sample_data.sql`), all three demo accounts share the local demo password `DemoCancer!2026`. You can sign in with it straight after importing, without running the setup script. Running the setup script replaces it with random passwords.
+The web login code remains unchanged: PHP verifies the submitted password with `password_verify()`. The SQL script stores a bcrypt hash, **not a plaintext password**. If you had run the old random-password tool previously, the SQL update replaces those hashes. Do not use these shared credentials on a publicly hosted instance.
 
 Tip: instead of editing `config/config.php`, create `config/config.local.php` containing for example `<?php return ['db_pass' => 'your-password'];`. Git ignores this file, so your MySQL password is never committed.
 
