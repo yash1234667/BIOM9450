@@ -18,3 +18,16 @@
 
 /* Small account and profile refinements */
 .profile-avatar img{width:100%;height:100%;object-fit:cover;border-radius:inherit}.person-institution{font-size:12px!important;letter-spacing:0;line-height:1.5}.light-divider{height:1px;border:0;background:#ebedf2;margin:26px 0}.account-form{display:grid;gap:7px}.account-form label{margin:9px 0 0}.account-form button{margin-top:13px;justify-self:start}
+
+/* Patient registration page: matches the existing sign-in design. */
+.register-box{max-width:460px;padding:24px 0}
+.register-box .signin-mark{margin-bottom:18px}
+.register-box h2{font-size:32px}
+.register-box .form-stack{gap:6px}
+.register-box .form-stack label{margin-top:9px}
+.register-box .sign-divider{margin-top:24px}
+.registration-note{font-size:11px;line-height:1.6;margin:4px 0 8px;color:#7d889d}
+.registration-link{color:#5b53df;font-weight:750;text-decoration:underline;text-underline-offset:2px}
+.registration-link:hover{color:#4038b8}
+[hidden]{display:none!important}
+@media(max-width:700px){.register-box{padding:6px 0}.register-box h2{font-size:29px}}

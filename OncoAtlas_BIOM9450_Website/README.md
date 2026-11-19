@@ -11,6 +11,7 @@ OncoAtlas_BIOM9450_Website/
 ├── index.php                  Homepage redirect
 ├── router.php                 Security router for PHP built-in dev server
 ├── login.php / logout.php     Password-based session authentication
+├── register.php               Claim an unlinked demo patient profile and register
 ├── dashboard.php              Dashboard + live MySQL/AJAX visualisations
 ├── patients.php               Searchable, filterable patient directory
 ├── patient.php                Patient profile, samples and mutations
@@ -44,7 +45,9 @@ OncoAtlas_BIOM9450_Website/
 ├── config/config.php          Local MySQL connection settings
 ├── database/sample_data.sql   ORIGINAL PROVIDED SQL; UNCHANGED
 ├── database/upload_example.tsv A synthetic TSV for import testing
-├── tools/setup_demo_passwords.php
+├── database/demo_logins.sql   Optional fixed teaching-password reset
+├── assets/js/registration.js  Simple registration form validation
+├── tools/setup_demo_passwords.php  Legacy random reset (not required)
 └── docs/
     ├── preview_login_desktop.png  Login design preview
     ├── preview_login_mobile.png   Mobile design preview
@@ -74,26 +77,17 @@ Check which PHP binary is running: `php -v`. Check MySQL driver: `php -m | grep 
    Do not rerun the dump in a populated `cancer_portal` database; it contains plain `CREATE TABLE` and `INSERT` statements, which will conflict with existing tables/data. **The included source SQL was not rewritten.**
 
 3. Open `config/config.php` and change `db_host`, `db_port`, `db_user`, and `db_pass` to match **your own local MySQL connection**. The file ships with common local defaults (`127.0.0.1`, port `3306`, user `root`, blank password). A blank password is only appropriate for an isolated, local educational environment.
-4. **Generate login passwords** for the three accounts already present in your SQL file. From the extracted project directory, run:
+4. **Optional: reset only the three demo account passwords**. Run `database/demo_logins.sql` in MySQL Workbench **after importing** the main database. It sets each built-in demo account to the teaching-only password `password`. This is intentionally easy for a locally isolated classroom demonstration. Keep normal bcrypt hashing and do not use this password on a public deployment. There is **no need to run** `tools/setup_demo_passwords.php`; that legacy script generates different random passwords and will replace the easy demo password if run.
+5. **Open the site:** in XAMPP/MAMP go to `http://localhost/OncoAtlas_BIOM9450_Website/` (adjust host/port), or run `php -S 127.0.0.1:8000 router.php` in the project directory and open `http://127.0.0.1:8000/`.
+6. Sign in with these demo accounts **after the optional SQL reset**:
 
-   ```bash
-   php tools/setup_demo_passwords.php
-   ```
-
-   This updates *only the `Password` hash for the existing sample user accounts*. It prints three newly generated passwords **once**; keep them private. Do not paste them into reports or public repositories. If your terminal `php` lacks `pdo_mysql`, use your local web stack’s PHP CLI executable instead, e.g. `/Applications/XAMPP/xamppfiles/bin/php tools/setup_demo_passwords.php` if that matches your installation.
-
-5. **Open the site:** in XAMPP/MAMP go to `http://localhost/OncoAtlas_BIOM9450_Website/` (adjust the host/port as required). Or run `php -S 127.0.0.1:8000 router.php` in the project directory and open `http://127.0.0.1:8000/`.
-6. Sign in with one of the sample emails below and its **generated** password:
-
-   | Role | Sample email | Access |
+   | Role | Email | Teaching-only password |
    |---|---|---|
-   | Oncologist | `oncologist@example.test` | Patients, mutation search, upload, cohorts |
-   | Researcher | `researcher@example.test` | Same as oncologist, plus analytics |
-   | Patient | `patient@example.test` | Only linked profile and prediction history |
+   | Oncologist | `oncologist@example.test` | `password` |
+   | Researcher | `researcher@example.test` | `password` |
+   | Patient | `patient@example.test` | `password` |
 
-The source SQL contains existing bcrypt hashes, but their plaintext passwords were **not supplied**. The setup script deliberately replaces demo account password hashes rather than pretending to know those passwords.
-
-In the group's database package (`biom_project/database/sample_data.sql`), all three demo accounts share the local demo password `DemoCancer!2026`. You can sign in with it straight after importing, without running the setup script. Running the setup script replaces it with random passwords.
+7. **Create a new patient account**: visit `register.php` from the sign-in page, choose an existing unclaimed synthetic patient profile, enter an email and password (12–72 characters), and submit. The new `AppUser` row is linked to `Patient.UserID`. Sign in with the new email and password. Each patient can have only one account and email addresses must be unique. In the academic demonstration, selecting an ID is sufficient; a real system would need identity verification.
 
 Tip: instead of editing `config/config.php`, create `config/config.local.php` containing for example `<?php return ['db_pass' => 'your-password'];`. Git ignores this file, so your MySQL password is never committed.
 
@@ -113,7 +107,7 @@ Tip: instead of editing `config/config.php`, create `config/config.local.php` co
 
 **Run prediction / Predictions:** Choose a patient and the random forest predicts the most likely of six cancer types from their saved mutations. It runs in JavaScript, and an interactive chart shows all six scores. Saving recomputes the result on the server and stores `Prediction`, `PredictionScore` and `PredictionMutation` in one transaction. Feedback is then given on `prediction.php`. Details: `docs/PREDICTION.md`.
 
-**Security:** Prepared PDO queries, HTML output escaping, session regeneration, bcrypt passwords, CSRF form tokens, file validation, role checks and audit records. `activity.php` displays recent actions for the current professional account.
+**Security:** Prepared PDO queries, HTML output escaping, session regeneration, bcrypt passwords, CSRF form tokens, file validation, role checks and audit records. Patient self-registration uses a row lock plus a transaction to avoid assigning one patient record to multiple accounts. This is a teaching registration flow, not identity proofing. `activity.php` displays recent actions for the current professional account.
 
 ## 5. Important limits
 
