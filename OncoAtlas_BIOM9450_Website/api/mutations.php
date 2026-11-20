@@ -20,8 +20,7 @@ try {
     $from=' FROM SampleMutation sm JOIN TumorSample s ON s.SampleID=sm.SampleID JOIN Patient p ON p.PatientID=s.PatientID JOIN Gene g ON g.GeneID=sm.GeneID JOIN Variant v ON v.VariantID=sm.VariantID LEFT JOIN CancerType c ON c.CancerTypeID=p.CancerTypeID';
     $cond=$conditions?' WHERE '.implode(' AND ',$conditions):'';
     $count=(int)query_value('SELECT COUNT(*)'.$from.$cond,$params);$pages=max(1,(int)ceil($count/$limit));$page=min($page,$pages);
-    $st=db()->prepare('SELECT sm.SampleMutationID,g.GeneSymbol,sm.MutationType,sm.VariantType,sm.Impact,sm.ProteinChange,v.GenomeBuild,v.Chromosome,v.MutationPosition,v.EndPosition,v.ReferenceAllele,v.AlternateAllele,s.TCGASampleBarcode,p.PatientID,c.StudyCode'.$from.$cond.' ORDER BY sm.SampleMutationID DESC LIMIT ? OFFSET ?');
-    foreach($params as $i=>$val)$st->bindValue($i+1,$val,is_int($val)?PDO::PARAM_INT:PDO::PARAM_STR);
-    $st->bindValue(count($params)+1,$limit,PDO::PARAM_INT);$st->bindValue(count($params)+2,($page-1)*$limit,PDO::PARAM_INT);$st->execute();
-    json_response(['rows'=>$st->fetchAll(),'total'=>$count,'page'=>$page,'pages'=>$pages]);
+    $sql='SELECT sm.SampleMutationID,g.GeneSymbol,sm.MutationType,sm.VariantType,sm.Impact,sm.ProteinChange,v.GenomeBuild,v.Chromosome,v.MutationPosition,v.EndPosition,v.ReferenceAllele,v.AlternateAllele,s.TCGASampleBarcode,p.PatientID,c.StudyCode'.$from.$cond.' ORDER BY sm.SampleMutationID DESC LIMIT ? OFFSET ?';
+    $rows=query_rows($sql,array_merge($params,[$limit,($page-1)*$limit]));
+    json_response(['rows'=>$rows,'total'=>$count,'page'=>$page,'pages'=>$pages]);
 } catch(Throwable $e) {error_log('Mutation API: '.$e->getMessage());json_response(['error'=>'Could not load mutation records'],500);}
