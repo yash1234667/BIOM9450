@@ -26,7 +26,7 @@ OncoAtlas_BIOM9450_Website/
 ├── genes.php                  AJAX gene explorer
 ├── cohorts.php                Six cancer types and their record counts
 ├── professionals.php          Researcher/oncologist profiles
-├── analytics.php              Researcher-only AJAX charts and comparison
+├── analytics.php              Researcher-only multi-gene counts and cohort comparisons
 ├── upload.php                 Small TSV mutation imports (transactional)
 ├── predict.php                Run prediction: model + interactive chart (predictive analysis)
 ├── predictions.php            Saved prediction history
@@ -127,3 +127,7 @@ Tip: instead of editing `config/config.php`, create `config/config.local.php` co
 - Programme: BIOM9450, Web-Based Cancer Type Prediction System.
 - Scope: functioning website, SQL integration and integrated predictive model.
 - Test checklist: `docs/MANUAL_TESTS.md`.
+
+## Researcher-only selected-gene chart
+
+Researcher accounts can open **Analytics**, select multiple genes using checkboxes or comma-separated symbols, and visualise the number of mutation observations for each selected gene. The chart uses the MySQLi AJAX endpoint in `api/stats.php`. Oncologist and Patient accounts cannot access this feature. The existing single-gene comparison across cancer cohorts remains available. See `docs/SIMPLIFIED_CODE_GUIDE.md` for a walkthrough.
