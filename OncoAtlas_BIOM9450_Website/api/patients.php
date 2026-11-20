@@ -76,22 +76,15 @@ try {
             . $where .
             ' ORDER BY p.PatientID DESC LIMIT ? OFFSET ?';
 
-    $stmt = db()->prepare($sql);
+    // Execute the prepared SELECT and bind all parameters through MySQLi.
+    // Keep LIMIT/OFFSET as integers for pagination.
+    $allValues = array_merge($values, [$perPage, $offset]);
+    $stmt = sql_run($sql, $allValues);
+    $rows = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+    $stmt->close();
 
-    // Bind search and filter values in the same order as the ? markers.
-    foreach ($values as $index => $value) {
-        $type = is_int($value) ? PDO::PARAM_INT : PDO::PARAM_STR;
-        $stmt->bindValue($index + 1, $value, $type);
-    }
-
-    // LIMIT/OFFSET are integers: send them as integers, not strings.
-    $stmt->bindValue(count($values) + 1, $perPage, PDO::PARAM_INT);
-    $stmt->bindValue(count($values) + 2, $offset, PDO::PARAM_INT);
-    $stmt->execute();
-
-    // JavaScript reads these exact JSON field names.
     json_response([
-        'rows' => $stmt->fetchAll(),
+        'rows' => $rows,
         'total' => $total,
         'page' => $page,
         'pages' => $pages
