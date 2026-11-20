@@ -1,5 +1,7 @@
 # OncoAtlas — BIOM9450 Cancer Research Portal
 
+> **MySQLi edition:** The regular website now uses MySQLi prepared statements, like PetStore's `apps/db.php`. The only remaining PDO connection is isolated in `app/model_db.php` to keep the existing model unmodified. See [docs/MYSQLI_MIGRATION.md](docs/MYSQLI_MIGRATION.md).
+
 > **Teaching-friendly code edition:** This branch starts from `feature/fixed-demo-password1234` and rewrites the **website portion** to be easier to read and present, using the style of the BIOM9450 PetStore assignment. PHP queries, form checks, AJAX and charts now have expanded comments and readable stages; the CSS is split into property-per-line rules. Database contents, stored model, prediction endpoints and model-side JavaScript are not changed. **Start with [docs/SIMPLIFIED_CODE_GUIDE.md](docs/SIMPLIFIED_CODE_GUIDE.md)** for a file-by-file explanation and manual test list.
 
 
@@ -33,7 +35,8 @@ OncoAtlas_BIOM9450_Website/
 ├── activity.php               Audit entries for the current account
 ├── account.php                Change your own account password
 ├── app/
-│   ├── bootstrap.php          PDO, roles, CSRF, session, validation, audit
+│   ├── bootstrap.php          MySQLi, roles, CSRF, session, validation, audit
+│   └── model_db.php           PDO only for the unchanged prediction model
 │   └── layout.php             Reusable sidebar, header, footer, icons
 ├── api/
 │   ├── patients.php           Paginated patient records
@@ -59,12 +62,12 @@ OncoAtlas_BIOM9450_Website/
 
 ## 2. Requirements
 
-- PHP 8.1+ with **pdo_mysql**, `session`, `fileinfo` and `json` extensions enabled
+- PHP 8.1+ with **mysqli** and **pdo_mysql**, `session`, `fileinfo` and `json` extensions enabled
 - MySQL 8.0+ (foreign keys and CHECK constraints)
 - Apache / MAMP / XAMPP / PHP development server (PHP must handle `.php` files)
 - A modern browser; charts work locally without any external chart libraries or internet access
 
-Check which PHP binary is running: `php -v`. Check MySQL driver: `php -m | grep -i pdo_mysql`.
+Check which PHP binary is running: `php -v`. Check both database extensions: `php -m | grep -E 'mysqli|pdo_mysql'`. Ordinary website pages use MySQLi; the unchanged prediction model still uses PDO.
 
 ## 3. Quick setup (new empty database)
 
@@ -108,7 +111,7 @@ Tip: instead of editing `config/config.php`, create `config/config.local.php` co
 
 **Run prediction / Predictions:** Choose a patient and the random forest predicts the most likely of six cancer types from their saved mutations. It runs in JavaScript, and an interactive chart shows all six scores. Saving recomputes the result on the server and stores `Prediction`, `PredictionScore` and `PredictionMutation` in one transaction. Feedback is then given on `prediction.php`. Details: `docs/PREDICTION.md`.
 
-**Security:** Prepared PDO queries, HTML output escaping, session regeneration, bcrypt passwords, CSRF form tokens, file validation, role checks and audit records. `activity.php` displays recent actions for the current professional account.
+**Security:** Prepared MySQLi queries (and PDO within the isolated prediction model), HTML output escaping, session regeneration, bcrypt passwords, CSRF form tokens, file validation, role checks and audit records. `activity.php` displays recent actions for the current professional account.
 
 ## 5. Important limits
 
