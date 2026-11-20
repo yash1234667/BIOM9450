@@ -91,25 +91,9 @@ function sql_run(string $sql, array $params = []): mysqli_stmt {
     return $stmt;
 }
 
-// This existing PDO connection is REQUIRED by the teammate's model code.
-// Do not use it in ordinary PHP pages: use mysqli_db() or sql_run() above.
-// Keeping it unchanged preserves prediction_save(PDO $pdo, ...).
-function db(): PDO {
-    static $connection = null;
-
-    if ($connection === null) {
-        $settings = config();
-        $dsn = "mysql:host={$settings['db_host']};"
-             . "port={$settings['db_port']};"
-             . "dbname={$settings['db_name']};charset=utf8mb4";
-
-        $connection = new PDO($dsn, $settings['db_user'], $settings['db_pass']);
-        $connection->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
-        $connection->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
-        $connection->setAttribute(PDO::ATTR_EMULATE_PREPARES, false);
-    }
-    return $connection;
-}
+// The prediction model requires its existing PDO interface.
+// It is isolated in app/model_db.php and is not used by website pages.
+require_once __DIR__ . '/model_db.php';
 
 // 4. Display database or form text safely inside HTML.
 // htmlspecialchars() stops a name such as "<script>" becoming HTML code.
