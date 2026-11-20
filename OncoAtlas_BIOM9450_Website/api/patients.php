@@ -14,7 +14,6 @@ try {
       (SELECT COUNT(*) FROM TumorSample s WHERE s.PatientID=p.PatientID) AS Samples,
       (SELECT COUNT(*) FROM SampleMutation sm JOIN TumorSample s2 ON s2.SampleID=sm.SampleID WHERE s2.PatientID=p.PatientID) AS Mutations
       FROM Patient p LEFT JOIN CancerType c ON c.CancerTypeID=p.CancerTypeID'.$cond.' ORDER BY p.PatientID DESC LIMIT ? OFFSET ?';
-    $st=db()->prepare($sql);foreach($params as $i=>$val)$st->bindValue($i+1,$val,is_int($val)?PDO::PARAM_INT:PDO::PARAM_STR);
-    $st->bindValue(count($params)+1,$limit,PDO::PARAM_INT);$st->bindValue(count($params)+2,$offset,PDO::PARAM_INT);$st->execute();
-    json_response(['rows'=>$st->fetchAll(),'total'=>$total,'page'=>$page,'pages'=>$pages]);
+    $rows=query_rows($sql,array_merge($params,[$limit,$offset]));
+    json_response(['rows'=>$rows,'total'=>$total,'page'=>$page,'pages'=>$pages]);
 } catch(Throwable $e) {error_log('Patients API: '.$e->getMessage());json_response(['error'=>'Could not load patient records'],500);}
