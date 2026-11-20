@@ -18,18 +18,42 @@ function config(): array {
     if ($settings === null) $settings = require ROOT_DIR . '/config/config.php';
     return $settings;
 }
-function db(): PDO {
-    static $connection;
+// Reuse one MySQLi connection for the duration of each PHP request.
+function db(): mysqli {
+    static $connection = null;
     if ($connection === null) {
         $c = config();
-        $dsn = "mysql:host={$c['db_host']};port={$c['db_port']};dbname={$c['db_name']};charset=utf8mb4";
-        $connection = new PDO($dsn, $c['db_user'], $c['db_pass'], [
-            PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
-            PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
-            PDO::ATTR_EMULATE_PREPARES => false,
-        ]);
+        mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
+        $connection = new mysqli(
+            $c['db_host'], $c['db_user'], $c['db_pass'],
+            $c['db_name'], (int)$c['db_port']
+        );
+        $connection->set_charset('utf8mb4');
     }
     return $connection;
+}
+
+// Prepare a query and safely bind its values before executing it.
+// Integers use "i", decimal numbers use "d", and all other values use "s".
+function sql_statement(string $sql, array $params = []): mysqli_stmt {
+    $stmt = db()->prepare($sql);
+    if ($params) {
+        $types = '';
+        foreach ($params as $value) {
+            $types .= is_int($value) ? 'i' : (is_float($value) ? 'd' : 's');
+        }
+        $stmt->bind_param($types, ...$params);
+    }
+    $stmt->execute();
+    return $stmt;
+}
+
+// Use for INSERT, UPDATE or DELETE. Returns the number of affected rows.
+function execute_sql(string $sql, array $params = []): int {
+    $stmt = sql_statement($sql, $params);
+    $affected = $stmt->affected_rows;
+    $stmt->close();
+    return $affected;
 }
 function h(mixed $value): string {
     return htmlspecialchars((string)($value ?? ''), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
@@ -81,8 +105,7 @@ function json_response(array $body, int $status=200): never {
 function audit(string $action, ?string $entity=null, ?string $entityId=null): void {
     // Audit errors are logged to the PHP server log, without exposing them to the browser.
     try {
-        $stmt=db()->prepare('INSERT INTO AuditLog(UserID,Action,EntityType,EntityID) VALUES (?,?,?,?)');
-        $stmt->execute([app_user()['id']??null,$action,$entity,$entityId]);
+        execute_sql('INSERT INTO AuditLog(UserID,Action,EntityType,EntityID) VALUES (?,?,?,?)', [app_user()['id']??null,$action,$entity,$entityId]);
     } catch (Throwable $e) {error_log('Audit error: '.$e->getMessage());}
 }
 function int_param(mixed $value, int $minimum=1, int $maximum=2147483647): ?int {
@@ -95,13 +118,25 @@ function clean_nullable(mixed $value): ?string {
     return $s === '' || in_array(strtoupper($s),['NA','N/A','NULL','NOT AVAILABLE','.'],true) ? null : $s;
 }
 function query_rows(string $sql, array $params=[]): array {
-    $st=db()->prepare($sql);$st->execute($params);return $st->fetchAll();
+    $stmt = sql_statement($sql, $params);
+    $result = $stmt->get_result();
+    $rows = $result->fetch_all(MYSQLI_ASSOC);
+    $result->free();
+    $stmt->close();
+    return $rows;
 }
 function query_one(string $sql, array $params=[]): ?array {
-    $st=db()->prepare($sql);$st->execute($params);$row=$st->fetch();return $row ?: null;
+    $stmt = sql_statement($sql, $params);
+    $result = $stmt->get_result();
+    $row = $result->fetch_assoc();
+    $result->free();
+    $stmt->close();
+    return $row;
 }
 function query_value(string $sql, array $params=[]): mixed {
-    $st=db()->prepare($sql);$st->execute($params);return $st->fetchColumn();
+    $row = query_one($sql, $params);
+    // Like the previous fetchColumn(), return false when no row exists.
+    return $row === null ? false : reset($row);
 }
 function require_get(): void {if ($_SERVER['REQUEST_METHOD'] !== 'GET') json_response(['error'=>'GET required'],405);}
 function nullable_post(string $key, int $max=255): ?string {

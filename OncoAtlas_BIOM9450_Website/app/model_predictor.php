@@ -83,9 +83,11 @@ function model_predict(array $rows): array {
  * Save Prediction + 6 PredictionScore rows + PredictionMutation links in ONE transaction (all or nothing).
  * $sampleMutationIds are the exact ModelInput rows the model received; they must all belong to $patientId.
  */
-function prediction_save(PDO $pdo, int $patientId, int $userId, array $prediction, array $sampleMutationIds): int {
+function prediction_save(mysqli $conn, int $patientId, int $userId, array $prediction, array $sampleMutationIds): int {
     $typeIds = [];
-    foreach ($pdo->query('SELECT CancerTypeID, StudyCode FROM CancerType') as $r) $typeIds[$r['StudyCode']] = (int)$r['CancerTypeID'];
+    foreach (query_rows('SELECT CancerTypeID, StudyCode FROM CancerType') as $r) {
+        $typeIds[$r['StudyCode']] = (int)$r['CancerTypeID'];
+    }
     foreach ($prediction['scores'] as $cls => $s) {
         if (!isset($typeIds[$prediction['study_codes'][$cls] ?? ''])) throw new RuntimeException("Model class $cls has no matching CancerType.");
         if (!is_finite($s) || $s < 0 || $s > 1) throw new RuntimeException("Invalid score for $cls.");
@@ -95,27 +97,34 @@ function prediction_save(PDO $pdo, int $patientId, int $userId, array $predictio
     $ids = array_values(array_unique(array_map('intval', $sampleMutationIds)));
     if (!$ids) throw new RuntimeException('A prediction must be linked to at least one mutation row.');
 
-    $pdo->beginTransaction();
+    $conn->begin_transaction();
     try {
+        // Confirm every mutation used by the model actually belongs to this patient.
         $place = implode(',', array_fill(0, count($ids), '?'));
-        $own = $pdo->prepare("SELECT COUNT(*) FROM SampleMutation sm JOIN TumorSample s ON s.SampleID=sm.SampleID WHERE s.PatientID=? AND sm.SampleMutationID IN ($place)");
-        $own->execute(array_merge([$patientId], $ids));
-        if ((int)$own->fetchColumn() !== count($ids)) throw new RuntimeException('Some input mutations do not belong to this patient.');
+        $owned = query_value(
+            "SELECT COUNT(*) FROM SampleMutation sm JOIN TumorSample s ON s.SampleID=sm.SampleID WHERE s.PatientID=? AND sm.SampleMutationID IN ($place)",
+            array_merge([$patientId], $ids)
+        );
+        if ((int)$owned !== count($ids)) throw new RuntimeException('Some input mutations do not belong to this patient.');
 
-        $pdo->prepare('INSERT INTO Prediction (PatientID, CreatedBy, ModelVersion) VALUES (?,?,?)')->execute([$patientId, $userId, $prediction['model_version']]);
-        $predictionId = (int)$pdo->lastInsertId();
-        $score = $pdo->prepare('INSERT INTO PredictionScore (PredictionID, CancerTypeID, Score) VALUES (?,?,?)');
-        foreach ($prediction['scores'] as $cls => $s) $score->execute([$predictionId, $typeIds[$prediction['study_codes'][$cls]], number_format($s, 9, '.', '')]);
+        execute_sql('INSERT INTO Prediction (PatientID, CreatedBy, ModelVersion) VALUES (?,?,?)',
+            [$patientId, $userId, $prediction['model_version']]);
+        $predictionId = (int)$conn->insert_id;
+        foreach ($prediction['scores'] as $cls => $score) {
+            execute_sql('INSERT INTO PredictionScore (PredictionID, CancerTypeID, Score) VALUES (?,?,?)',
+                [$predictionId, $typeIds[$prediction['study_codes'][$cls]], number_format($score, 9, '.', '')]);
+        }
+        // A single query per group keeps large prediction sets manageable.
         foreach (array_chunk($ids, 500) as $chunk) {
             $values = implode(',', array_fill(0, count($chunk), '(?,?)'));
             $params = [];
             foreach ($chunk as $id) array_push($params, $predictionId, $id);
-            $pdo->prepare("INSERT INTO PredictionMutation (PredictionID, SampleMutationID) VALUES $values")->execute($params);
+            execute_sql("INSERT INTO PredictionMutation (PredictionID, SampleMutationID) VALUES $values", $params);
         }
-        $pdo->commit();
+        $conn->commit();
         return $predictionId;
     } catch (Throwable $e) {
-        if ($pdo->inTransaction()) $pdo->rollBack();
+        $conn->rollback();
         throw $e;
     }
 }
