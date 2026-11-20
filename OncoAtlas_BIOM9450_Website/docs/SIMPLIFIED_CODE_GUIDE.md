@@ -114,3 +114,27 @@ Run with your own PHP/MySQL server:
 10. Compare the model and prediction files to the base branch: they must be identical.
 
 **Testing status:** the source has been revised and reviewed for consistent endpoints/field names, but the full PHP + MySQL workflow must be tested on your local database before merging. The original SQL and model files are not modified in this branch.
+
+
+## Researcher-specific analytics: selected list of genes
+
+The assignment requires researchers to visualise mutation counts for a selected list of genes.
+
+1. Sign in as Researcher and open analytics.php from the sidebar or the Researcher dashboard link.
+2. Tick multiple common genes and/or enter additional comma-separated gene symbols.
+3. assets/js/app.js reads 1–12 distinct genes from the form and uses fetch() to call api/stats.php?scope=selected_genes.
+4. The PHP endpoint confirms the Researcher role, validates gene names and runs a MySQLi prepared SELECT with JOIN and COUNT.
+5. JavaScript draws one bar per selected gene and reports unknown gene symbols.
+
+The existing single-gene comparison across six cancer cohorts remains underneath the new chart.
+Oncologists cannot see Analytics in their menu or dashboard and are denied direct access to the analytics page and AJAX endpoint.
+These counts are mutation observations, not clinical risk estimates.
+
+### Manual checks
+
+- Researcher: select several genes, press Visualise selection and confirm different bar heights/count labels.
+- Researcher: type an additional gene; select no genes to check validation; test a nonexistent gene.
+- Oncologist: confirm the Analytics menu and dashboard link are absent, and direct page/API access is denied.
+- Verify the prediction model and original database files match the base branch.
+
+**Note:** The changes require local PHP/MySQL integration testing before merging.
