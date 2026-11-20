@@ -6,7 +6,9 @@
 // It provides the database connection, login checks, form protection,
 // small SQL helpers, and activity logging.
 //
-// We keep PDO because the existing prediction code uses PDO transactions.
+// Regular website database operations use MySQLi, like the PetStore task.
+// The separate, existing prediction model still requires a PDO connection;
+// we retain db() for it without changing the model code.
 // -----------------------------------------------------------------------------
 
 declare(strict_types=1);
@@ -38,31 +40,74 @@ function config(): array {
     return $settings;
 }
 
-// 3. Open the database connection. PDO is PHP's database interface.
-// We reuse one connection, rather than opening a new one for every query.
-function db(): PDO {
+// 3. MySQLi connection, as in the PetStore apps/db.php file.
+// The same connection is used by SELECT, INSERT and UPDATE queries.
+// It is also shared during mutation-upload transactions.
+function mysqli_db(): mysqli {
     static $connection = null;
 
     if ($connection === null) {
         $settings = config();
 
+        // MySQLi throws mysqli_sql_exception if a query fails.
+        mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
+
+        $connection = new mysqli(
+            $settings['db_host'],
+            $settings['db_user'],
+            $settings['db_pass'],
+            $settings['db_name'],
+            (int)$settings['db_port']
+        );
+        $connection->set_charset('utf8mb4');
+    }
+
+    return $connection;
+}
+
+// Prepare and run an SQL statement, using ? placeholders.
+// This is the same prepare() / bind_param() / execute() process
+// used in PetStore. We put it in one place to avoid repeating it.
+function sql_run(string $sql, array $params = []): mysqli_stmt {
+    $stmt = mysqli_db()->prepare($sql);
+
+    if (count($params) > 0) {
+        // bind_param types: i = integer, d = decimal, s = string.
+        $types = '';
+        foreach ($params as $value) {
+            if (is_int($value)) {
+                $types .= 'i';
+            } elseif (is_float($value)) {
+                $types .= 'd';
+            } else {
+                $types .= 's';
+            }
+        }
+
+        $stmt->bind_param($types, ...$params);
+    }
+
+    $stmt->execute();
+    return $stmt;
+}
+
+// This existing PDO connection is REQUIRED by the teammate's model code.
+// Do not use it in ordinary PHP pages: use mysqli_db() or sql_run() above.
+// Keeping it unchanged preserves prediction_save(PDO $pdo, ...).
+function db(): PDO {
+    static $connection = null;
+
+    if ($connection === null) {
+        $settings = config();
         $dsn = "mysql:host={$settings['db_host']};"
              . "port={$settings['db_port']};"
              . "dbname={$settings['db_name']};charset=utf8mb4";
 
         $connection = new PDO($dsn, $settings['db_user'], $settings['db_pass']);
-
-        // Throw an error when a SQL statement fails (caught in the page).
         $connection->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
-
-        // Return database rows as arrays: $row['Name'], $row['Age'], etc.
         $connection->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
-
-        // Send prepared SQL statements to MySQL, instead of building SQL
-        // by adding user-submitted text to a query string.
         $connection->setAttribute(PDO::ATTR_EMULATE_PREPARES, false);
     }
-
     return $connection;
 }
 
@@ -199,8 +244,8 @@ function audit(string $action, ?string $entity = null, ?string $entityId = null)
     try {
         $sql = 'INSERT INTO AuditLog (UserID, Action, EntityType, EntityID)
                 VALUES (?, ?, ?, ?)';
-        $stmt = db()->prepare($sql);
-        $stmt->execute([app_user()['id'] ?? null, $action, $entity, $entityId]);
+        $stmt = sql_run($sql, [app_user()['id'] ?? null, $action, $entity, $entityId]);
+        $stmt->close();
     } catch (Throwable $error) {
         error_log('Audit error: ' . $error->getMessage());
     }
@@ -232,29 +277,36 @@ function clean_nullable(mixed $value): ?string {
     return $text;
 }
 
-// 11. These three helpers keep SELECT queries easy to read on pages.
-// All question marks (?) are values supplied separately through execute().
+// 11. Three simple MySQLi SELECT helpers.
+// query_rows()  -> many rows (e.g. all patients)
+// query_one()   -> one row  (e.g. patient with PatientID = 2)
+// query_value() -> one value (e.g. COUNT(*) = 150)
 //
-// query_rows()  -> many rows, such as all cancer types
-// query_one()   -> one row, such as a single patient
-// query_value() -> one value, such as COUNT(*) or a primary key
+// Each one uses the same PetStore technique: prepare, bind, execute,
+// get_result, then fetch_assoc or fetch_all.
 function query_rows(string $sql, array $params = []): array {
-    $stmt = db()->prepare($sql);
-    $stmt->execute($params);
-    return $stmt->fetchAll();
+    $stmt = sql_run($sql, $params);
+    $result = $stmt->get_result();
+    $rows = $result->fetch_all(MYSQLI_ASSOC);
+    $stmt->close();
+    return $rows;
 }
 
 function query_one(string $sql, array $params = []): ?array {
-    $stmt = db()->prepare($sql);
-    $stmt->execute($params);
-    $row = $stmt->fetch();
+    $stmt = sql_run($sql, $params);
+    $result = $stmt->get_result();
+    $row = $result->fetch_assoc();
+    $stmt->close();
     return $row ?: null;
 }
 
 function query_value(string $sql, array $params = []): mixed {
-    $stmt = db()->prepare($sql);
-    $stmt->execute($params);
-    return $stmt->fetchColumn();
+    $row = query_one($sql, $params);
+    // Like PDO fetchColumn(): false if SELECT returned no rows.
+    if ($row === null) {
+        return false;
+    }
+    return reset($row);
 }
 
 function require_get(): void {
