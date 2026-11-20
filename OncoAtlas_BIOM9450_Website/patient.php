@@ -1,18 +1,82 @@
 <?php
-// Patient profile: validate the selected PatientID, check role permissions, then SELECT the clinical record, related tumour samples and mutation details.
-// The page reuses app/layout.php and app/bootstrap.php (like PetStore's shared files).
+// Patient details — PHP receives ?id=123 from the patient directory.
+// Each query below demonstrates a relationship between MySQL tables.
+require_once __DIR__ . '/app/layout.php';
+require_login();
 
-require_once __DIR__.'/app/layout.php';require_login();
-$id=int_param($_GET['id']??null);
-if(!$id || !can_view_patient($id)){http_response_code(403);exit('Patient record not available.');}
-$p=query_one('SELECT p.*,c.StudyCode,c.CancerName,c.DiagnosisLabel,u.Name AS OncologistName FROM Patient p LEFT JOIN CancerType c ON c.CancerTypeID=p.CancerTypeID LEFT JOIN Professional pr ON pr.ProfessionalID=p.OncologistID LEFT JOIN AppUser u ON u.UserID=pr.UserID WHERE p.PatientID=?',[$id]);
-if(!$p){http_response_code(404);exit('Patient not found.');}
-$samples=query_rows('SELECT s.SampleID,s.TCGASampleBarcode,s.SampleType,s.CollectionDate,COUNT(sm.SampleMutationID) AS MutationCount FROM TumorSample s LEFT JOIN SampleMutation sm ON sm.SampleID=s.SampleID WHERE s.PatientID=? GROUP BY s.SampleID,s.TCGASampleBarcode,s.SampleType,s.CollectionDate ORDER BY s.SampleID',[$id]);
-$topGenes=query_rows('SELECT g.GeneSymbol,COUNT(*) AS total FROM SampleMutation sm JOIN Gene g ON g.GeneID=sm.GeneID JOIN TumorSample s ON s.SampleID=sm.SampleID WHERE s.PatientID=? GROUP BY g.GeneID,g.GeneSymbol ORDER BY total DESC,g.GeneSymbol LIMIT 8',[$id]);
-$recent=query_rows('SELECT sm.SampleMutationID,g.GeneSymbol,sm.MutationType,sm.ProteinChange,v.Chromosome,v.MutationPosition,s.TCGASampleBarcode FROM SampleMutation sm JOIN TumorSample s ON s.SampleID=sm.SampleID JOIN Gene g ON g.GeneID=sm.GeneID JOIN Variant v ON v.VariantID=sm.VariantID WHERE s.PatientID=? ORDER BY sm.SampleMutationID DESC LIMIT 10',[$id]);
-audit('VIEW_PATIENT','Patient',(string)$id);
-start_page($p['Name'],'patients.php','Patient details, linked samples and observed genetic mutations.','PATIENT PROFILE');
+// 1. Check the patient ID and the signed-in user's permissions.
+// Patient accounts may only open the patient linked to their own UserID.
+$patientId = int_param($_GET['id'] ?? null);
+if (!$patientId || !can_view_patient($patientId)) {
+    http_response_code(403);
+    exit('Patient record not available.');
+}
+
+// 2. Load the patient and their cancer type / assigned oncologist.
+// LEFT JOIN keeps the patient visible even if a professional is unassigned.
+$patientSql = 'SELECT p.*, c.StudyCode, c.CancerName,
+                      c.DiagnosisLabel, u.Name AS OncologistName
+               FROM Patient p
+               LEFT JOIN CancerType c ON c.CancerTypeID = p.CancerTypeID
+               LEFT JOIN Professional pr ON pr.ProfessionalID = p.OncologistID
+               LEFT JOIN AppUser u ON u.UserID = pr.UserID
+               WHERE p.PatientID = ?';
+$p = query_one($patientSql, [$patientId]);
+
+if (!$p) {
+    http_response_code(404);
+    exit('Patient not found.');
+}
+
+// 3. Load all tumour samples for this patient.
+// GROUP BY lets SQL count how many mutation records each sample has.
+$sampleSql = 'SELECT s.SampleID, s.TCGASampleBarcode,
+                     s.SampleType, s.CollectionDate,
+                     COUNT(sm.SampleMutationID) AS MutationCount
+              FROM TumorSample s
+              LEFT JOIN SampleMutation sm ON sm.SampleID = s.SampleID
+              WHERE s.PatientID = ?
+              GROUP BY s.SampleID, s.TCGASampleBarcode,
+                       s.SampleType, s.CollectionDate
+              ORDER BY s.SampleID';
+$samples = query_rows($sampleSql, [$patientId]);
+
+// 4. Find the eight most frequently observed gene symbols.
+$geneSql = 'SELECT g.GeneSymbol, COUNT(*) AS total
+            FROM SampleMutation sm
+            JOIN Gene g ON g.GeneID = sm.GeneID
+            JOIN TumorSample s ON s.SampleID = sm.SampleID
+            WHERE s.PatientID = ?
+            GROUP BY g.GeneID, g.GeneSymbol
+            ORDER BY total DESC, g.GeneSymbol
+            LIMIT 8';
+$topGenes = query_rows($geneSql, [$patientId]);
+
+// 5. Read the most recent mutation observations and their positions.
+$mutationSql = 'SELECT sm.SampleMutationID, g.GeneSymbol,
+                       sm.MutationType, sm.ProteinChange,
+                       v.Chromosome, v.MutationPosition,
+                       s.TCGASampleBarcode
+                FROM SampleMutation sm
+                JOIN TumorSample s ON s.SampleID = sm.SampleID
+                JOIN Gene g ON g.GeneID = sm.GeneID
+                JOIN Variant v ON v.VariantID = sm.VariantID
+                WHERE s.PatientID = ?
+                ORDER BY sm.SampleMutationID DESC
+                LIMIT 10';
+$recent = query_rows($mutationSql, [$patientId]);
+
+// 6. Audit the page view; HTML below shows the retrieved rows.
+$id = $patientId;
+audit('VIEW_PATIENT', 'Patient', (string)$patientId);
+start_page(
+    $p['Name'],
+    'patients.php',
+    'Patient details, linked samples and observed genetic mutations.',
+    'PATIENT PROFILE'
+);
 ?>
+
 <div class="toolbar">
 <a class="backlink" href="<?=account_role()==='Patient'?'dashboard.php':'patients.php'?>">← <?=account_role()==='Patient'?'My workspace':'All patients'?>
 </a>
