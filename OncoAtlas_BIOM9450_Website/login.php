@@ -1,7 +1,7 @@
 <?php
 // Login page — the same approach as the PetStore POST forms.
 // 1. Read the submitted email/password.
-// 2. Look up the user with a prepared query.
+// 2. Look up the user with a MySQLi prepared query.
 // 3. Check the bcrypt password with password_verify().
 // 4. Save the user's ID and role in $_SESSION.
 // 5. Redirect to the dashboard.
@@ -28,9 +28,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 FROM AppUser
                 WHERE Email = ?
                 LIMIT 1';
-        $stmt = db()->prepare($sql);
-        $stmt->execute([$email]);
-        $user = $stmt->fetch(PDO::FETCH_ASSOC);
+        $stmt = sql_run($sql, [$email]);
+        $user = $stmt->get_result()->fetch_assoc();
+        $stmt->close();
 
         if (!$user || !password_verify($password, $user['Password'])) {
             // Use the same message for an unknown email and wrong password.
