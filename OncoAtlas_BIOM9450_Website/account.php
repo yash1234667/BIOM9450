@@ -1,24 +1,71 @@
 <?php
-// Account settings: check the logged-in user, verify the old password, hash a replacement password and update AppUser with a prepared statement.
-// The page reuses app/layout.php and app/bootstrap.php (like PetStore's shared files).
+// My Account page — similar to the PetStore forms.
+// POST saves the changed password; GET shows the HTML form.
+require_once __DIR__ . '/app/layout.php';
+require_login();
 
-require_once __DIR__.'/app/layout.php';require_login();$error='';
-if($_SERVER['REQUEST_METHOD']==='POST') {
-  try {
-    verify_csrf();
-    $current=(string)($_POST['current_password']??'');$new=(string)($_POST['new_password']??'');$confirm=(string)($_POST['confirm_password']??'');
-    $account=query_one('SELECT Password FROM AppUser WHERE UserID=?',[app_user()['id']]);
-    if(!$account||!password_verify($current,(string)$account['Password']))throw new RuntimeException('Current password is incorrect.');
-    if(strlen($new)<12 || strlen($new)>128)throw new RuntimeException('Choose a password containing 12–128 characters.');
-    if($new!==$confirm)throw new RuntimeException('New passwords do not match.');
-    if(hash_equals($current,$new))throw new RuntimeException('Choose a different password.');
-    $hash=password_hash($new,PASSWORD_BCRYPT);
-    db()->prepare('UPDATE AppUser SET Password=? WHERE UserID=?')->execute([$hash,app_user()['id']]);
-    session_regenerate_id(true);audit('CHANGE_PASSWORD','AppUser',(string)app_user()['id']);flash('Password updated successfully.');redirect('account.php');
-  } catch (Throwable $e){$error=$e instanceof PDOException?'Unable to update password.':$e->getMessage();error_log('Change password: '.$e->getMessage());}
+$error = '';
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    try {
+        verify_csrf();
+
+        // Step 1: Read the three password fields from the form.
+        $currentPassword = (string)($_POST['current_password'] ?? '');
+        $newPassword = (string)($_POST['new_password'] ?? '');
+        $confirmPassword = (string)($_POST['confirm_password'] ?? '');
+
+        // Step 2: Check the existing password stored in AppUser.
+        // password_verify compares a plain password with its bcrypt hash.
+        $sql = 'SELECT Password FROM AppUser WHERE UserID = ?';
+        $stmt = db()->prepare($sql);
+        $stmt->execute([app_user()['id']]);
+        $account = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        if (!$account || !password_verify($currentPassword, $account['Password'])) {
+            throw new RuntimeException('Current password is incorrect.');
+        }
+
+        // Step 3: Validate the new password before changing the database.
+        if (strlen($newPassword) < 12 || strlen($newPassword) > 128) {
+            throw new RuntimeException('Choose a password containing 12–128 characters.');
+        }
+        if ($newPassword !== $confirmPassword) {
+            throw new RuntimeException('New passwords do not match.');
+        }
+        if ($currentPassword === $newPassword) {
+            throw new RuntimeException('Choose a different password.');
+        }
+
+        // Step 4: Hash the NEW password and update only this user.
+        $hash = password_hash($newPassword, PASSWORD_BCRYPT);
+        $sql = 'UPDATE AppUser SET Password = ? WHERE UserID = ?';
+        $stmt = db()->prepare($sql);
+        $stmt->execute([$hash, app_user()['id']]);
+
+        // Step 5: Record the change and return to the account page.
+        session_regenerate_id(true);
+        audit('CHANGE_PASSWORD', 'AppUser', (string)app_user()['id']);
+        flash('Password updated successfully.');
+        redirect('account.php');
+
+    } catch (Throwable $problem) {
+        error_log('Change password: ' . $problem->getMessage());
+        if ($problem instanceof PDOException) {
+            $error = 'Unable to update password.';
+        } else {
+            $error = $problem->getMessage();
+        }
+    }
 }
-start_page('My account','account.php','Your current research portal login and password settings.','ACCOUNT SETTINGS');
-?><div class="two-column form-layout">
+
+start_page(
+    'My account', 'account.php',
+    'Your current research portal login and password settings.',
+    'ACCOUNT SETTINGS'
+);
+?>
+<div class="two-column form-layout">
 <section class="panel">
 <div class="panel-title">
 <div>
