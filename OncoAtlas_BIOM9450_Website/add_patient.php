@@ -26,12 +26,13 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
             if(!move_uploaded_file($upload['tmp_name'],__DIR__.'/'.$photoPath))throw new RuntimeException('Could not save photo. Check assets/uploads permissions.');
         }
         // New records are teaching/demo profiles. Never manufacture a TCGA barcode.
-        $st=db()->prepare('INSERT INTO Patient(TCGAPatientID,Name,Photo,Age,Sex,Country,Treatment,Diagnosis,CancerTypeID,DemographicsSynthetic,UserID,OncologistID) VALUES(NULL,?,?, ?,?,?,?,?,?,1,NULL,?)');
-        $st->execute([$name,$photoPath,$age,$sex,$country,$treatment,$diagnosis,$cancer,$oncologist]);$id=(int)db()->lastInsertId();
+        execute_sql('INSERT INTO Patient(TCGAPatientID,Name,Photo,Age,Sex,Country,Treatment,Diagnosis,CancerTypeID,DemographicsSynthetic,UserID,OncologistID) VALUES(NULL,?,?, ?,?,?,?,?,?,1,NULL,?)',
+            [$name,$photoPath,$age,$sex,$country,$treatment,$diagnosis,$cancer,$oncologist]);
+        $id=(int)db()->insert_id;
         audit('CREATE_PATIENT','Patient',(string)$id);
         flash('The demonstration patient profile was created. Add a sample or import mutations from the profile.');
         redirect('patient.php?id='.$id);
-    } catch (Throwable $e) {if(!empty($photoPath) && is_file(__DIR__.'/'.$photoPath))unlink(__DIR__.'/'.$photoPath);$error=$e instanceof PDOException?'Could not save the patient. Please review the fields.':$e->getMessage();error_log('Create patient: '.$e->getMessage());}
+    } catch (Throwable $e) {if(!empty($photoPath) && is_file(__DIR__.'/'.$photoPath))unlink(__DIR__.'/'.$photoPath);$error=$e instanceof mysqli_sql_exception?'Could not save the patient. Please review the fields.':$e->getMessage();error_log('Create patient: '.$e->getMessage());}
 }
 start_page('Add a patient','patients.php','Create a clearly labelled demonstration profile without modifying any imported TCGA records.','CLINICAL RECORDS');
 ?>
