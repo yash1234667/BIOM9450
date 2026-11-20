@@ -29,7 +29,7 @@ OncoAtlas_BIOM9450_Website/
 ├── activity.php               Audit entries for the current account
 ├── account.php                Change your own account password
 ├── app/
-│   ├── bootstrap.php          PDO, roles, CSRF, session, validation, audit
+│   ├── bootstrap.php          MySQLi, roles, CSRF, session, validation, audit
 │   └── layout.php             Reusable sidebar, header, footer, icons
 ├── api/
 │   ├── patients.php           Paginated patient records
@@ -55,12 +55,12 @@ OncoAtlas_BIOM9450_Website/
 
 ## 2. Requirements
 
-- PHP 8.1+ with **pdo_mysql**, `session`, `fileinfo` and `json` extensions enabled
+- PHP 8.1+ with **mysqli** and **mysqlnd** (for `get_result()`), `session`, `fileinfo` and `json` extensions enabled
 - MySQL 8.0+ (foreign keys and CHECK constraints)
 - Apache / MAMP / XAMPP / PHP development server (PHP must handle `.php` files)
 - A modern browser; charts work locally without any external chart libraries or internet access
 
-Check which PHP binary is running: `php -v`. Check MySQL driver: `php -m | grep -i pdo_mysql`.
+Check which PHP binary is running: `php -v`. Check MySQLi: `php -m | grep -i mysqli`. This website no longer uses PDO.
 
 ## 3. Quick setup (new empty database)
 
@@ -104,7 +104,7 @@ Tip: instead of editing `config/config.php`, create `config/config.local.php` co
 
 **Run prediction / Predictions:** Choose a patient and the random forest predicts the most likely of six cancer types from their saved mutations. It runs in JavaScript, and an interactive chart shows all six scores. Saving recomputes the result on the server and stores `Prediction`, `PredictionScore` and `PredictionMutation` in one transaction. Feedback is then given on `prediction.php`. Details: `docs/PREDICTION.md`.
 
-**Security:** Prepared PDO queries, HTML output escaping, session regeneration, bcrypt passwords, CSRF form tokens, file validation, role checks and audit records. `activity.php` displays recent actions for the current professional account.
+**Security:** Prepared MySQLi queries, HTML output escaping, session regeneration, bcrypt passwords, CSRF form tokens, file validation, role checks and audit records. `activity.php` displays recent actions for the current professional account.
 
 ## 5. Important limits
 
@@ -120,3 +120,15 @@ Tip: instead of editing `config/config.php`, create `config/config.local.php` co
 - Programme: BIOM9450, Web-Based Cancer Type Prediction System.
 - Scope: functioning website, SQL integration and integrated predictive model.
 - Test checklist: `docs/MANUAL_TESTS.md`.
+
+## MySQLi implementation notes (student code)
+
+The database connection is in `app/bootstrap.php` and uses `new mysqli()` with `set_charset('utf8mb4')`. The same file provides three reusable functions:
+
+- `query_rows($sql, $params)` for a list of associative rows (including AJAX table queries).
+- `query_one($sql, $params)` and `query_value($sql, $params)` for individual records and counts.
+- `execute_sql($sql, $params)` for inserts, updates and deletes.
+
+Each helper prepares its query using `mysqli::prepare()`, binds variable data with `bind_param()` and executes it. User data is never concatenated into a SQL statement. The importer and saved prediction endpoint retain transaction handling using `begin_transaction()`, `commit()` and `rollback()`.
+
+**Local testing checklist:** After pulling this branch, check demo login, patient list filters (AJAX), mutation/gene filters (AJAX), add-patient with and without a photo, changing a password, saving feedback, mutation uploads (valid file and rollback on invalid file), and saving model predictions. This branch has not been live-tested against your local MySQL installation; verify every workflow before merging it into your submission.
