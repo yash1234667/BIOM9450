@@ -55,6 +55,18 @@ start_page('Overview','dashboard.php','Explore de-identified genomic observation
 <span>✳</span>
 </div>
 </section>
+<?php if (is_researcher()): ?>
+<!-- Researcher-only tool, not shown to Oncologist or Patient accounts. -->
+<section class="researcher-shortcut">
+    <div>
+        <strong>Researcher analytics</strong>
+        <p>Select several genes and visualise their mutation counts side by side.</p>
+    </div>
+    <a class="button primary" href="analytics.php">
+        Open gene comparisons <?=icon('arrow')?>
+    </a>
+</section>
+<?php endif; ?>
 <div class="metrics-row">
   <article class="metric-card">
 <span class="metric-symbol blue">

@@ -402,6 +402,81 @@ async function loadResearchCharts() {
 
     form.addEventListener('submit', compare);
     compare();
+
+    // Separate assignment chart: multiple selected genes in one graph.
+    initialiseSelectedGeneChart();
+}
+
+// Researcher-only: compare mutation observations for 1–12 selected genes.
+// The PHP API checks the user's role AND validates the gene selection.
+function initialiseSelectedGeneChart() {
+    const form = element('selectedGenesForm');
+    if (!form) return;
+
+    const chart = element('selectedGenesChart');
+    const status = element('selectedGenesStatus');
+    const extraInput = element('extraGeneSymbols');
+
+    async function visualiseGenes(event) {
+        if (event) event.preventDefault();
+
+        // Read checked boxes from the actual form (not hardcoded names).
+        const selected = [];
+        const checked = form.querySelectorAll('input[name="selectedGene"]:checked');
+
+        for (const checkbox of checked) {
+            selected.push(checkbox.value.trim().toUpperCase());
+        }
+
+        // An additional text input lets users compare other gene symbols.
+        const extra = extraInput.value.split(',');
+        for (const entry of extra) {
+            const gene = entry.trim().toUpperCase();
+            if (gene !== '') selected.push(gene);
+        }
+
+        // Remove duplicates, keeping the original selection order.
+        const genes = [...new Set(selected)];
+
+        if (genes.length < 1 || genes.length > 12) {
+            status.textContent = 'Please select between 1 and 12 genes.';
+            chart.textContent = '';
+            return;
+        }
+
+        status.textContent = 'Loading selected genes…';
+        chart.textContent = 'Preparing comparison…';
+
+        try {
+            const url = 'api/stats.php?scope=selected_genes&genes=' +
+                encodeURIComponent(genes.join(','));
+            const data = await getJSON(url);
+
+            // The existing chart helper creates text nodes safely.
+            const rows = data.rows.map(function (gene) {
+                return {
+                    label: gene.GeneSymbol,
+                    count: gene.Mutations
+                };
+            });
+
+            drawBars(chart, rows, 'label', 'count');
+
+            let message = rows.length + ' selected gene(s) found.';
+            if (data.notFound.length > 0) {
+                message += ' Not found in database: ' + data.notFound.join(', ');
+            }
+            status.textContent = message;
+        } catch (error) {
+            status.textContent = error.message;
+            chart.textContent = 'Unable to compare these genes.';
+        }
+    }
+
+    form.addEventListener('submit', visualiseGenes);
+
+    // Show the default four selected genes as soon as the page loads.
+    visualiseGenes();
 }
 
 // UPLOAD ASSIST — show the existing samples when a patient ID is entered.

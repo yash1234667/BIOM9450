@@ -2065,3 +2065,83 @@ textarea {
   justify-self:start
 }
 
+
+/* Researcher Analytics: select a list of genes and plot their mutation counts. */
+.gene-choice-fieldset {
+  border:0;
+  margin:0 0 15px;
+  padding:0;
+}
+
+.gene-choice-fieldset legend {
+  color:#627085;
+  font-size:12px;
+  font-weight:750;
+  margin-bottom:12px;
+}
+
+.gene-choice-grid {
+  display:grid;
+  grid-template-columns:repeat(auto-fit,minmax(105px,1fr));
+  gap:9px;
+}
+
+.gene-choice {
+  display:flex;
+  align-items:center;
+  gap:9px;
+  cursor:pointer;
+  background:#f8f9fc;
+  border:1px solid #e1e6ee;
+  border-radius:9px;
+  padding:10px 12px;
+  font-size:12px;
+  color:#364660;
+  font-weight:700;
+}
+
+.gene-choice:has(input:checked) {
+  border-color:#837af2;
+  background:#f0efff;
+}
+
+.gene-choice input[type="checkbox"] {
+  display:inline-block;
+  width:16px;
+  min-width:16px;
+  min-height:16px;
+  height:16px;
+  margin:0;
+  padding:0;
+  accent-color:#6258e8;
+  box-shadow:none;
+}
+
+.selected-genes-form .gene-compare-form {
+  margin-bottom:10px;
+}
+
+.researcher-shortcut {
+  margin-bottom:18px;
+  border:1px solid #d9d6fb;
+  background:#f4f2ff;
+  border-radius:12px;
+  padding:18px 22px;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:18px;
+}
+
+.researcher-shortcut p {
+  font-size:12px;
+  line-height:1.6;
+  margin:5px 0 0;
+}
+
+@media (max-width:650px) {
+  .researcher-shortcut {
+    flex-direction:column;
+    align-items:flex-start;
+  }
+}

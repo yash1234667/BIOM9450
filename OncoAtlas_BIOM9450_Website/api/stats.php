@@ -8,7 +8,7 @@ require_get();
 
 try {
     $scope = (string)($_GET['scope'] ?? 'overview');
-    $allowedScopes = ['overview', 'analytics', 'compare'];
+    $allowedScopes = ['overview', 'analytics', 'compare', 'selected_genes'];
 
     if (!in_array($scope, $allowedScopes, true)) {
         json_response(['error' => 'Unknown chart'], 422);
@@ -16,8 +16,74 @@ try {
 
     // Researchers can use the extra analytics views;
     // oncologists can still see the standard dashboard.
-    if (($scope === 'analytics' || $scope === 'compare') && !is_researcher()) {
+    if ($scope !== 'overview' && !is_researcher()) {
         json_response(['error' => 'Researcher access required'], 403);
+    }
+
+    // RESEARCHER ONLY — mutation counts for a selected list of genes.
+    // For example: ?scope=selected_genes&genes=TP53,KRAS,DNMT3A
+    // This is the additional visualisation required in the assignment.
+    if ($scope === 'selected_genes') {
+        $input = $_GET['genes'] ?? '';
+
+        // Prevent arrays and unusually long GET values from being accepted.
+        if (!is_string($input) || strlen($input) > 700) {
+            json_response(['error' => 'Invalid gene selection'], 422);
+        }
+
+        $symbols = [];
+        foreach (explode(',', $input) as $item) {
+            $gene = strtoupper(trim($item));
+
+            if ($gene === '') {
+                continue;
+            }
+            if (strlen($gene) > 100 || !preg_match('/^[A-Z0-9_.-]+$/', $gene)) {
+                json_response(['error' => 'Use valid gene symbols separated by commas'], 422);
+            }
+
+            // Duplicates such as TP53,tp53 must only count once.
+            if (!in_array($gene, $symbols, true)) {
+                $symbols[] = $gene;
+            }
+        }
+
+        if (count($symbols) === 0 || count($symbols) > 12) {
+            json_response(['error' => 'Select between 1 and 12 different genes'], 422);
+        }
+
+        // A prepared IN (?, ?, ...) query fetches all requested genes.
+        // LEFT JOIN also gives zero for genes with no recorded mutations.
+        $placeholders = implode(',', array_fill(0, count($symbols), '?'));
+        $sql = 'SELECT UPPER(g.GeneSymbol) AS GeneSymbol,
+                       COUNT(sm.SampleMutationID) AS Mutations
+                FROM Gene g
+                LEFT JOIN SampleMutation sm ON sm.GeneID = g.GeneID
+                WHERE UPPER(g.GeneSymbol) IN (' . $placeholders . ')
+                GROUP BY g.GeneID, g.GeneSymbol';
+
+        $results = query_rows($sql, $symbols);
+        $byGene = [];
+        foreach ($results as $result) {
+            $byGene[$result['GeneSymbol']] = (int)$result['Mutations'];
+        }
+
+        // Only show genes found in the database; report missing names
+        // separately instead of inventing mutation counts for them.
+        $rows = [];
+        $notFound = [];
+        foreach ($symbols as $symbol) {
+            if (array_key_exists($symbol, $byGene)) {
+                $rows[] = [
+                    'GeneSymbol' => $symbol,
+                    'Mutations' => $byGene[$symbol]
+                ];
+            } else {
+                $notFound[] = $symbol;
+            }
+        }
+
+        json_response(['rows' => $rows, 'notFound' => $notFound]);
     }
 
     // Counts are grouped by cancer cohort (LAML, BRCA, PAAD etc.).
