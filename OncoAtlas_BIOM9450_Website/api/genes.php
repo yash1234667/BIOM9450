@@ -25,7 +25,6 @@ try {
      COUNT(DISTINCT CASE WHEN '.$match.' THEN s.SampleID END) AS SampleCount,
      COUNT(DISTINCT CASE WHEN '.$match.' THEN p.PatientID END) AS PatientCount
      FROM Gene g'.$join.$cond.' GROUP BY g.GeneID,g.GeneSymbol'.($cid===null?'':' HAVING MutationCount>0').' ORDER BY MutationCount DESC,g.GeneSymbol LIMIT ? OFFSET ?';
-    $st=db()->prepare($sql);foreach($params as $i=>$v)$st->bindValue($i+1,$v,PDO::PARAM_STR);
-    $st->bindValue(count($params)+1,$limit,PDO::PARAM_INT);$st->bindValue(count($params)+2,($page-1)*$limit,PDO::PARAM_INT);$st->execute();
-    json_response(['rows'=>$st->fetchAll(),'total'=>$count,'page'=>$page,'pages'=>$pages]);
+    $rows=query_rows($sql,array_merge($params,[$limit,($page-1)*$limit]));
+    json_response(['rows'=>$rows,'total'=>$count,'page'=>$page,'pages'=>$pages]);
 } catch(Throwable $e) {error_log('Genes API: '.$e->getMessage());json_response(['error'=>'Could not load genes'],500);}
