@@ -84,16 +84,15 @@ try {
            . $having
            . ' ORDER BY MutationCount DESC, g.GeneSymbol LIMIT ? OFFSET ?';
 
-    $stmt = db()->prepare($sql);
-    foreach ($params as $index => $value) {
-        $stmt->bindValue($index + 1, $value, PDO::PARAM_STR);
-    }
-    $stmt->bindValue(count($params) + 1, $perPage, PDO::PARAM_INT);
-    $stmt->bindValue(count($params) + 2, $offset, PDO::PARAM_INT);
-    $stmt->execute();
+    // Execute the prepared SELECT and bind all parameters through MySQLi.
+    // Keep LIMIT/OFFSET as integers for pagination.
+    $allValues = array_merge($params, [$perPage, $offset]);
+    $stmt = sql_run($sql, $allValues);
+    $rows = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+    $stmt->close();
 
     json_response([
-        'rows' => $stmt->fetchAll(),
+        'rows' => $rows,
         'total' => $total,
         'page' => $page,
         'pages' => $pages
