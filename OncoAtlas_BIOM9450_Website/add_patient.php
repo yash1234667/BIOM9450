@@ -111,14 +111,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                  Diagnosis, CancerTypeID, DemographicsSynthetic, UserID, OncologistID)
                 VALUES (NULL, ?, ?, ?, ?, ?, ?, ?, ?, 1, NULL, ?)';
 
-        $stmt = db()->prepare($sql);
-        $stmt->execute([
+        $stmt = sql_run($sql, [
             $name, $photoPath, $age, $sex, $country, $treatment,
             $diagnosis, $cancer, $oncologist
         ]);
+        $stmt->close();
 
-        // lastInsertId() returns the automatically created PatientID.
-        $newPatientId = (int)db()->lastInsertId();
+        // insert_id returns the automatically created PatientID.
+        $newPatientId = (int)mysqli_db()->insert_id;
         audit('CREATE_PATIENT', 'Patient', (string)$newPatientId);
         flash('The demonstration patient profile was created.');
         redirect('patient.php?id=' . $newPatientId);
@@ -130,7 +130,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
 
         error_log('Create patient: ' . $problem->getMessage());
-        if ($problem instanceof PDOException) {
+        if ($problem instanceof mysqli_sql_exception) {
             $error = 'Could not save the patient. Please review the fields.';
         } else {
             $error = $problem->getMessage();
