@@ -1,128 +1,502 @@
 'use strict';
-/* Native JavaScript/AJAX. No Bootstrap or chart library required. */
-(() => {
-  const $ = (id) => document.getElementById(id);
-  const safe = (v) => String(v ?? '').replace(/[&<>"']/g, (ch) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
-  const maybe = (v) => v === null || v === '' || v === undefined ? '—' : safe(v);
-  const number = (v) => new Intl.NumberFormat('en-AU').format(Number(v || 0));
-  const debounce = (fn, ms = 330) => { let timer; return (...a) => { clearTimeout(timer); timer = setTimeout(() => fn(...a), ms); }; };
-  async function fetchJSON(url, opts = {}) {
-    const response = await fetch(url, {credentials:'same-origin',...opts});
-    if (response.status === 401) {window.location.href = 'login.php'; throw new Error('Session expired');}
-    const data = await response.json().catch(() => {throw new Error('Unexpected server response');});
-    if (!response.ok) throw new Error(data.error || 'Unable to load data');
-    return data;
-  }
-  function tableState({form, body, status, prev, next, pageLabel, endpoint, row, colspan = 8, extraParams}) {
-    if (!body) return;
-    let currentPage = 1, pageCount = 1, requestID = 0;
-    async function update() {
-      const id = ++requestID;
-      status.textContent = 'Loading results…';body.setAttribute('aria-busy','true');
-      try {
-        const qs = new URLSearchParams(new FormData(form));
-        if (extraParams) Object.entries(extraParams()).forEach(([k,v])=>qs.set(k,v));
-        qs.set('page', String(currentPage));
-        const data = await fetchJSON(endpoint + '?' + qs.toString());
-        if (id !== requestID) return;
-        currentPage = data.page;pageCount = data.pages;
-        body.innerHTML = data.rows.length ? data.rows.map(row).join('') : `<tr><td class="no-results" colspan="${colspan}">No matching records. Try changing your filters.</td></tr>`;
-        status.textContent = `${number(data.total)} matching record${Number(data.total) === 1 ? '' : 's'}`;
-        pageLabel.textContent = `Page ${currentPage} of ${pageCount}`;
-        prev.disabled = currentPage <= 1;next.disabled = currentPage >= pageCount;
-      } catch (err) {
-        if (id !== requestID) return;
-        status.textContent = err.message; body.innerHTML = `<tr><td colspan="${colspan}" class="no-results">Unable to load this table. Check your connection and try again.</td></tr>`;
-      } finally {if (id === requestID) body.removeAttribute('aria-busy');}
-    }
-    const refresh = () => {currentPage=1;update();};
-    form.addEventListener('input',debounce(refresh));form.addEventListener('change',refresh);
-    prev.addEventListener('click',()=>{if(currentPage>1){currentPage--;update();}});
-    next.addEventListener('click',()=>{if(currentPage<pageCount){currentPage++;update();}});
-    update();return {refresh};
-  }
-  const OncoTables = {
-    patients() {
-      const form=$('patientsFilters'); if(!form)return;
-      const controls=tableState({form,body:$('patientsBody'),status:$('patientsStatus'),prev:$('patientsPrev'),next:$('patientsNext'),pageLabel:$('patientsPage'),endpoint:'api/patients.php',colspan:8,
-        row:(p)=>`<tr><td><strong>${safe(p.Name)}</strong>${Number(p.DemographicsSynthetic)?'<small class="table-subline">Teaching profile</small>':''}</td><td class="mono">${maybe(p.TCGAPatientID)}</td><td><span class="code-pill">${maybe(p.StudyCode?.toUpperCase())}</span></td><td>${maybe(p.Age)}</td><td>${maybe(p.Sex)}</td><td>${number(p.Samples)}</td><td>${number(p.Mutations)}</td><td><a class="row-link" href="patient.php?id=${Number(p.PatientID)}">Open <span aria-hidden="true">›</span></a></td></tr>`});
-      $('resetPatients')?.addEventListener('click',()=>{form.reset();controls.refresh();});
-    },
-    mutations() {
-      const form=$('mutationFilters');if(!form)return;
-      const controls=tableState({form,body:$('mutationsBody'),status:$('mutationStatus'),prev:$('mutationsPrev'),next:$('mutationsNext'),pageLabel:$('mutationsPage'),endpoint:'api/mutations.php',colspan:9,
-        row:(m)=>`<tr><td><a class="gene-link" href="genes.php?gene=${encodeURIComponent(m.GeneSymbol || '')}">${maybe(m.GeneSymbol)}</a></td><td>${maybe(m.Chromosome)}</td><td class="mono">${maybe(m.MutationPosition)}</td><td class="mono variant-alleles">${maybe(m.ReferenceAllele)} <span>→</span> ${maybe(m.AlternateAllele)}</td><td>${maybe(m.MutationType)}</td><td><span class="impact ${safe((m.Impact || '').toLowerCase())}">${maybe(m.Impact)}</span></td><td class="mono">${maybe(m.ProteinChange)}</td><td><a class="mono sample-link" href="patient.php?id=${Number(m.PatientID)}">${maybe(m.TCGASampleBarcode)}</a></td><td><span class="code-pill">${maybe(m.StudyCode?.toUpperCase())}</span></td></tr>`});
-      $('clearMutations')?.addEventListener('click',()=>{form.reset();form.elements.patient.value='';controls.refresh();});
-    },
-    genes() {
-      const form=document.createElement('form');
-      const search=$('geneSearch'),cohort=$('geneCohort');if(!search)return;
-      const controls=tableState({form,body:$('geneBody'),status:$('geneStatus'),prev:$('genesPrev'),next:$('genesNext'),pageLabel:$('genesPage'),endpoint:'api/genes.php',colspan:5,extraParams:()=>({q:search.value,cancer:cohort.value}),
-        row:(g)=>`<tr><td><strong class="gene-symbol">${safe(g.GeneSymbol)}</strong></td><td>${number(g.MutationCount)}</td><td>${number(g.SampleCount)}</td><td>${number(g.PatientCount)}</td><td><a class="row-link" href="mutations.php?gene=${encodeURIComponent(g.GeneSymbol)}">View mutations <span>›</span></a></td></tr>`});
-      const uri=new URLSearchParams(window.location.search).get('gene');if(uri){search.value=uri;controls.refresh();}
-      search.addEventListener('input',debounce(controls.refresh));cohort.addEventListener('change',controls.refresh);
-      $('geneReset')?.addEventListener('click',()=>{search.value='';cohort.value='';controls.refresh();});
-    }
-  };
-  const chartColors=['#6258e8','#009b96','#ef9a47','#4884dd','#b56bd8','#eb677d','#6f83a6','#5ca98f'];
-  function makeBars(container, rows, nameKey, valueKey, empty='No chart data available') {
-    if(!container)return;container.replaceChildren();
-    if(!rows.length){container.textContent=empty;return;}
-    const maximum=Math.max(1,...rows.map(r=>Number(r[valueKey] || 0)));
-    const inner=document.createElement('div');inner.className='chart-bars';
-    rows.forEach((r,i)=>{
-      const value=Number(r[valueKey]||0),ratio=Math.max(0,Math.min(100,value/maximum*100));
-      const item=document.createElement('div');item.className='chart-row';
-      const label=document.createElement('span');label.className='chart-label';label.textContent=String(r[nameKey]);label.title=String(r[nameKey]);
-      const track=document.createElement('div');track.className='chart-track';
-      const bar=document.createElement('div');bar.className='chart-bar';bar.style.width=ratio+'%';bar.style.background=chartColors[i%chartColors.length];
-      const figure=document.createElement('strong');figure.className='chart-number';figure.textContent=number(value);
-      track.appendChild(bar);item.append(label,track,figure);inner.appendChild(item);
+
+// OncoAtlas JavaScript — written like the PetStore assignment.
+//
+// A PHP page shows the HTML. When the user types into a search box,
+// JavaScript uses fetch() to ask an API PHP file for new rows.
+// The API runs SQL and returns JSON, which we display in the table.
+//
+// All prediction/model JavaScript lives in separate files and is unchanged.
+
+// Find an HTML element by its id, e.g. element('patientsBody').
+function element(id) {
+    return document.getElementById(id);
+}
+
+// Escape text that came from MySQL before putting it into innerHTML.
+// This stops data such as <script> from being treated as HTML.
+function safeText(value) {
+    let text = String(value ?? '');
+    return text.replace(/[&<>"']/g, function (character) {
+        const replacements = {
+            '&': '&amp;', '<': '&lt;', '>': '&gt;',
+            '"': '&quot;', "'": '&#39;'
+        };
+        return replacements[character];
     });
-    container.appendChild(inner);
-  }
-  const OncoCharts={
-    async loadOverview(){
-      try {const data=await fetchJSON('api/stats.php?scope=overview');
-        makeBars($('cohortChart'),data.cohorts.map(c=>({label:String(c.StudyCode).toUpperCase(),n:c.Patients})),'label','n');
-        makeBars($('geneChart'),data.topGenes.map(g=>({label:g.GeneSymbol,n:g.Mutations})),'label','n');
-      }catch(e){if($('cohortChart'))$('cohortChart').textContent=e.message;if($('geneChart'))$('geneChart').textContent=e.message;}
-    },
-    async loadAnalytics(){
-      try{const data=await fetchJSON('api/stats.php?scope=analytics');
-        makeBars($('mutationCohortChart'),data.cohorts.map(c=>({label:String(c.StudyCode).toUpperCase(),n:c.Mutations})),'label','n');
-        makeBars($('classChart'),data.classes.map(c=>({label:c.MutationType,n:c.Mutations})),'label','n');
-      }catch(e){if($('mutationCohortChart'))$('mutationCohortChart').textContent=e.message;}
-      const form=$('compareForm');if(!form)return;
-      const compare=async(e)=>{
-        if(e)e.preventDefault();const gene=$('compareGene').value.trim();const c=$('geneCompareChart');
-        if(!gene){c.textContent='Enter a gene symbol.';return;}c.textContent='Comparing cohorts…';
-        try{const data=await fetchJSON('api/stats.php?scope=compare&gene='+encodeURIComponent(gene));
-          makeBars(c,data.rows.map(r=>({label:String(r.StudyCode).toUpperCase(),n:r.Mutations})),'label','n','No observations were found for this gene.');
-        }catch(err){c.textContent=err.message;}
-      };form.addEventListener('submit',compare);compare();
+}
+
+// Show a dash when an optional database field is empty.
+function showValue(value) {
+    if (value === null || value === undefined || value === '') {
+        return '—';
     }
-  };
-  const OncoUpload={
-    init(){const field=$('uploadPatient'),barcode=$('sampleBarcode'),target=$('sampleLookup');if(!field)return;
-      const load=debounce(async()=>{
-        const id=field.value.trim();target.replaceChildren();if(!/^\d+$/.test(id)){target.textContent='Enter a patient ID to see existing samples.';return;}
-        target.textContent='Looking up samples…';
-        try {const data=await fetchJSON('api/patient_samples.php?patient_id='+encodeURIComponent(id));target.replaceChildren();
-          const p=document.createElement('p');p.textContent=data.patient.Name+' · '+(data.patient.TCGAPatientID||'Manual profile');target.appendChild(p);
-          if(!data.samples.length){const s=document.createElement('small');s.textContent='No existing samples. Enter a new barcode.';target.appendChild(s);return;}
-          const hint=document.createElement('small');hint.textContent='Click an existing sample to use its barcode:';target.appendChild(hint);
-          data.samples.forEach(s=>{const b=document.createElement('button');b.type='button';b.className='sample-choice';b.textContent=s.TCGASampleBarcode||('Sample #'+s.SampleID);b.addEventListener('click',()=>{barcode.value=s.TCGASampleBarcode||'';barcode.focus();});target.appendChild(b);});
-        } catch(e){target.textContent=e.message;}
-      },300);
-      field.addEventListener('input',load);if(field.value)load();
+    return safeText(value);
+}
+
+function showNumber(value) {
+    return Number(value || 0).toLocaleString('en-AU');
+}
+
+// Wait until typing stops before sending an AJAX request.
+// Without this, every keystroke would create a new MySQL request.
+function afterTyping(callback) {
+    let timer;
+    return function () {
+        clearTimeout(timer);
+        timer = setTimeout(callback, 300);
+    };
+}
+
+// GET JSON from a PHP endpoint (same idea as PetStore customer lookup).
+async function getJSON(url) {
+    const response = await fetch(url, {credentials: 'same-origin'});
+
+    if (response.status === 401) {
+        window.location.href = 'login.php';
+        throw new Error('Your session expired. Please sign in again.');
     }
-  };
-  document.addEventListener('DOMContentLoaded',()=>{
-    const toggle=$('menuToggle'),side=$('sidebar');
-    toggle?.addEventListener('click',()=>side?.classList.toggle('open'));
-    document.addEventListener('keydown',e=>{if(e.key==='Escape')side?.classList.remove('open');});
-    document.querySelectorAll('.nav-link').forEach(link=>link.addEventListener('click',()=>side?.classList.remove('open')));
-  });
-  window.OncoTables=OncoTables;window.OncoCharts=OncoCharts;window.OncoUpload=OncoUpload;
-})();
+
+    const data = await response.json();
+
+    if (!response.ok) {
+        throw new Error(data.error || 'Could not load data.');
+    }
+
+    return data;
+}
+
+// Shared table loader for the Patients, Mutations and Genes pages.
+// Each page supplies the endpoint, form controls and how to show one row.
+function setupTable(settings) {
+    const tableBody = element(settings.bodyId);
+    const status = element(settings.statusId);
+    const pageLabel = element(settings.pageId);
+    const previous = element(settings.prevId);
+    const next = element(settings.nextId);
+
+    if (!tableBody) return null;
+
+    let page = 1;
+    let totalPages = 1;
+    let lastRequest = 0;
+
+    async function load() {
+        // Read current filter input values from the page.
+        const parameters = new URLSearchParams(settings.getFilters());
+        parameters.set('page', String(page));
+
+        const request = ++lastRequest;
+        status.textContent = 'Loading…';
+        tableBody.setAttribute('aria-busy', 'true');
+
+        try {
+            const url = settings.endpoint + '?' + parameters.toString();
+            const result = await getJSON(url);
+
+            // If an older request finishes after a newer one, ignore it.
+            if (request !== lastRequest) return;
+
+            page = Number(result.page);
+            totalPages = Number(result.pages);
+
+            // Convert each JSON row to the table's HTML.
+            let html = '';
+            for (const record of result.rows) {
+                html += settings.makeRow(record);
+            }
+
+            if (result.rows.length === 0) {
+                html = '<tr><td class="no-results" colspan="' +
+                    settings.columns +
+                    '">No matching records. Try different filters.</td></tr>';
+            }
+
+            tableBody.innerHTML = html;
+            status.textContent = showNumber(result.total) + ' matching records';
+            pageLabel.textContent = 'Page ' + page + ' of ' + totalPages;
+            previous.disabled = page <= 1;
+            next.disabled = page >= totalPages;
+
+        } catch (error) {
+            if (request !== lastRequest) return;
+            status.textContent = error.message;
+            tableBody.innerHTML = '<tr><td class="no-results" colspan="' +
+                settings.columns + '">Could not load results.</td></tr>';
+        } finally {
+            if (request === lastRequest) tableBody.removeAttribute('aria-busy');
+        }
+    }
+
+    // A changed search starts again from the first page.
+    function refresh() {
+        page = 1;
+        load();
+    }
+
+    previous.addEventListener('click', function () {
+        if (page > 1) {
+            page--;
+            load();
+        }
+    });
+
+    next.addEventListener('click', function () {
+        if (page < totalPages) {
+            page++;
+            load();
+        }
+    });
+
+    load();
+    return {refresh: refresh};
+}
+
+// PATIENTS — API: api/patients.php
+function initialisePatients() {
+    const form = element('patientsFilters');
+    if (!form) return;
+
+    const table = setupTable({
+        endpoint: 'api/patients.php',
+        bodyId: 'patientsBody',
+        statusId: 'patientsStatus',
+        pageId: 'patientsPage',
+        prevId: 'patientsPrev',
+        nextId: 'patientsNext',
+        columns: 8,
+        getFilters: function () {return new FormData(form);},
+        makeRow: function (patient) {
+            const id = Number(patient.PatientID);
+            let tag = '';
+            if (Number(patient.DemographicsSynthetic)) {
+                tag = '<small class="table-subline">Teaching profile</small>';
+            }
+
+            return '<tr>' +
+                '<td><strong>' + safeText(patient.Name) + '</strong>' + tag + '</td>' +
+                '<td class="mono">' + showValue(patient.TCGAPatientID) + '</td>' +
+                '<td><span class="code-pill">' + showValue((patient.StudyCode || '').toUpperCase()) + '</span></td>' +
+                '<td>' + showValue(patient.Age) + '</td>' +
+                '<td>' + showValue(patient.Sex) + '</td>' +
+                '<td>' + showNumber(patient.Samples) + '</td>' +
+                '<td>' + showNumber(patient.Mutations) + '</td>' +
+                '<td><a class="row-link" href="patient.php?id=' + id + '">Open ›</a></td>' +
+                '</tr>';
+        }
+    });
+
+    form.addEventListener('input', afterTyping(table.refresh));
+    form.addEventListener('change', table.refresh);
+    element('resetPatients').addEventListener('click', function () {
+        form.reset();
+        table.refresh();
+    });
+}
+
+// MUTATIONS — API: api/mutations.php
+function initialiseMutations() {
+    const form = element('mutationFilters');
+    if (!form) return;
+
+    const table = setupTable({
+        endpoint: 'api/mutations.php',
+        bodyId: 'mutationsBody',
+        statusId: 'mutationStatus',
+        pageId: 'mutationsPage',
+        prevId: 'mutationsPrev',
+        nextId: 'mutationsNext',
+        columns: 9,
+        getFilters: function () {return new FormData(form);},
+        makeRow: function (mutation) {
+            const gene = String(mutation.GeneSymbol || '');
+            const id = Number(mutation.PatientID);
+            const impact = String(mutation.Impact || '').toLowerCase();
+
+            return '<tr>' +
+                '<td><a class="gene-link" href="genes.php?gene=' + encodeURIComponent(gene) + '">' + safeText(gene) + '</a></td>' +
+                '<td>' + showValue(mutation.Chromosome) + '</td>' +
+                '<td class="mono">' + showValue(mutation.MutationPosition) + '</td>' +
+                '<td class="mono variant-alleles">' + showValue(mutation.ReferenceAllele) + ' → ' + showValue(mutation.AlternateAllele) + '</td>' +
+                '<td>' + showValue(mutation.MutationType) + '</td>' +
+                '<td><span class="impact ' + safeText(impact) + '">' + showValue(mutation.Impact) + '</span></td>' +
+                '<td class="mono">' + showValue(mutation.ProteinChange) + '</td>' +
+                '<td><a class="mono sample-link" href="patient.php?id=' + id + '">' + showValue(mutation.TCGASampleBarcode) + '</a></td>' +
+                '<td><span class="code-pill">' + showValue((mutation.StudyCode || '').toUpperCase()) + '</span></td>' +
+                '</tr>';
+        }
+    });
+
+    form.addEventListener('input', afterTyping(table.refresh));
+    form.addEventListener('change', table.refresh);
+    element('clearMutations').addEventListener('click', function () {
+        form.reset();
+        form.elements.patient.value = '';
+        table.refresh();
+    });
+}
+
+// GENES — API: api/genes.php
+function initialiseGenes() {
+    const search = element('geneSearch');
+    const cohort = element('geneCohort');
+    if (!search) return;
+
+    // A gene link from the Mutation explorer arrives as ?gene=TP53.
+    const params = new URLSearchParams(window.location.search);
+    if (params.has('gene')) search.value = params.get('gene');
+
+    const table = setupTable({
+        endpoint: 'api/genes.php',
+        bodyId: 'geneBody',
+        statusId: 'geneStatus',
+        pageId: 'genesPage',
+        prevId: 'genesPrev',
+        nextId: 'genesNext',
+        columns: 5,
+        getFilters: function () {
+            return new URLSearchParams({q: search.value, cancer: cohort.value});
+        },
+        makeRow: function (gene) {
+            return '<tr>' +
+                '<td><strong class="gene-symbol">' + safeText(gene.GeneSymbol) + '</strong></td>' +
+                '<td>' + showNumber(gene.MutationCount) + '</td>' +
+                '<td>' + showNumber(gene.SampleCount) + '</td>' +
+                '<td>' + showNumber(gene.PatientCount) + '</td>' +
+                '<td><a class="row-link" href="mutations.php?gene=' +
+                encodeURIComponent(gene.GeneSymbol) + '">View mutations ›</a></td>' +
+                '</tr>';
+        }
+    });
+
+    search.addEventListener('input', afterTyping(table.refresh));
+    cohort.addEventListener('change', table.refresh);
+    element('geneReset').addEventListener('click', function () {
+        search.value = '';
+        cohort.value = '';
+        table.refresh();
+    });
+}
+
+// CHARTS — create simple bars using HTML/CSS instead of an extra library.
+const chartColours = ['#6258e8', '#009b96', '#ef9a47', '#4884dd', '#b56bd8', '#eb677d'];
+
+function drawBars(container, rows, labelField, countField) {
+    if (!container) return;
+    container.innerHTML = '';
+
+    if (rows.length === 0) {
+        container.textContent = 'No chart data available.';
+        return;
+    }
+
+    let maximum = 1;
+    for (const record of rows) {
+        maximum = Math.max(maximum, Number(record[countField] || 0));
+    }
+
+    const chart = document.createElement('div');
+    chart.className = 'chart-bars';
+
+    rows.forEach(function (record, index) {
+        const label = String(record[labelField]);
+        const count = Number(record[countField] || 0);
+        const percentage = Math.min(100, count / maximum * 100);
+
+        // Create chart elements with DOM functions (not unsafe HTML).
+        const row = document.createElement('div');
+        row.className = 'chart-row';
+
+        const title = document.createElement('span');
+        title.className = 'chart-label';
+        title.textContent = label;
+        title.title = label;
+
+        const track = document.createElement('div');
+        track.className = 'chart-track';
+
+        const bar = document.createElement('div');
+        bar.className = 'chart-bar';
+        bar.style.width = percentage + '%';
+        bar.style.backgroundColor = chartColours[index % chartColours.length];
+        track.appendChild(bar);
+
+        const value = document.createElement('strong');
+        value.className = 'chart-number';
+        value.textContent = showNumber(count);
+
+        row.appendChild(title);
+        row.appendChild(track);
+        row.appendChild(value);
+        chart.appendChild(row);
+    });
+
+    container.appendChild(chart);
+}
+
+// DASHBOARD CHARTS — AJAX response comes from api/stats.php?scope=overview.
+async function loadDashboardCharts() {
+    try {
+        const data = await getJSON('api/stats.php?scope=overview');
+
+        const cohorts = data.cohorts.map(function (row) {
+            return {label: row.StudyCode.toUpperCase(), count: row.Patients};
+        });
+        const genes = data.topGenes.map(function (row) {
+            return {label: row.GeneSymbol, count: row.Mutations};
+        });
+
+        drawBars(element('cohortChart'), cohorts, 'label', 'count');
+        drawBars(element('geneChart'), genes, 'label', 'count');
+    } catch (error) {
+        if (element('cohortChart')) element('cohortChart').textContent = error.message;
+        if (element('geneChart')) element('geneChart').textContent = error.message;
+    }
+}
+
+// RESEARCHER CHARTS — AJAX requests for cohort / classification / gene counts.
+async function loadResearchCharts() {
+    try {
+        const data = await getJSON('api/stats.php?scope=analytics');
+        const cohortRows = data.cohorts.map(function (r) {
+            return {label: r.StudyCode.toUpperCase(), count: r.Mutations};
+        });
+        const classRows = data.classes.map(function (r) {
+            return {label: r.MutationType, count: r.Mutations};
+        });
+
+        drawBars(element('mutationCohortChart'), cohortRows, 'label', 'count');
+        drawBars(element('classChart'), classRows, 'label', 'count');
+    } catch (error) {
+        if (element('mutationCohortChart')) {
+            element('mutationCohortChart').textContent = error.message;
+        }
+    }
+
+    const form = element('compareForm');
+    if (!form) return;
+
+    async function compare(event) {
+        if (event) event.preventDefault(); // Do not reload the page.
+
+        const gene = element('compareGene').value.trim();
+        const output = element('geneCompareChart');
+
+        if (gene === '') {
+            output.textContent = 'Enter a gene symbol.';
+            return;
+        }
+
+        output.textContent = 'Comparing cohorts…';
+        try {
+            const url = 'api/stats.php?scope=compare&gene=' + encodeURIComponent(gene);
+            const data = await getJSON(url);
+            const rows = data.rows.map(function (r) {
+                return {label: r.StudyCode.toUpperCase(), count: r.Mutations};
+            });
+            drawBars(output, rows, 'label', 'count');
+        } catch (error) {
+            output.textContent = error.message;
+        }
+    }
+
+    form.addEventListener('submit', compare);
+    compare();
+}
+
+// UPLOAD ASSIST — show the existing samples when a patient ID is entered.
+function initialiseSampleLookup() {
+    const patientField = element('uploadPatient');
+    const barcodeField = element('sampleBarcode');
+    const output = element('sampleLookup');
+    if (!patientField) return;
+
+    async function showSamples() {
+        const id = patientField.value.trim();
+        output.innerHTML = '';
+
+        if (!/^[0-9]+$/.test(id)) {
+            output.textContent = 'Enter a patient ID to see existing samples.';
+            return;
+        }
+
+        output.textContent = 'Looking up samples…';
+
+        try {
+            const url = 'api/patient_samples.php?patient_id=' + encodeURIComponent(id);
+            const data = await getJSON(url);
+            output.innerHTML = '';
+
+            const name = document.createElement('p');
+            name.textContent = data.patient.Name + ' · ' +
+                (data.patient.TCGAPatientID || 'Manual profile');
+            output.appendChild(name);
+
+            if (data.samples.length === 0) {
+                const message = document.createElement('small');
+                message.textContent = 'No existing samples. Enter a new barcode.';
+                output.appendChild(message);
+                return;
+            }
+
+            const hint = document.createElement('small');
+            hint.textContent = 'Click an existing sample to use its barcode:';
+            output.appendChild(hint);
+
+            for (const sample of data.samples) {
+                const button = document.createElement('button');
+                button.type = 'button';
+                button.className = 'sample-choice';
+                button.textContent = sample.TCGASampleBarcode || 'Sample #' + sample.SampleID;
+
+                button.addEventListener('click', function () {
+                    barcodeField.value = sample.TCGASampleBarcode || '';
+                    barcodeField.focus();
+                });
+                output.appendChild(button);
+            }
+        } catch (error) {
+            output.textContent = error.message;
+        }
+    }
+
+    patientField.addEventListener('input', afterTyping(showSamples));
+    if (patientField.value) showSamples();
+}
+
+// SHARED MENU — this is the simple mobile sidebar toggle.
+document.addEventListener('DOMContentLoaded', function () {
+    const menu = element('menuToggle');
+    const sidebar = element('sidebar');
+
+    if (menu && sidebar) {
+        menu.addEventListener('click', function () {
+            sidebar.classList.toggle('open');
+        });
+    }
+
+    document.addEventListener('keydown', function (event) {
+        if (event.key === 'Escape' && sidebar) sidebar.classList.remove('open');
+    });
+
+    document.querySelectorAll('.nav-link').forEach(function (link) {
+        link.addEventListener('click', function () {
+            if (sidebar) sidebar.classList.remove('open');
+        });
+    });
+});
+
+// Pages already call these entry points. Keep the names so the existing
+// HTML pages continue working without changes.
+window.OncoTables = {
+    patients: initialisePatients,
+    mutations: initialiseMutations,
+    genes: initialiseGenes
+};
+window.OncoCharts = {
+    loadOverview: loadDashboardCharts,
+    loadAnalytics: loadResearchCharts
+};
+window.OncoUpload = {
+    init: initialiseSampleLookup
+};

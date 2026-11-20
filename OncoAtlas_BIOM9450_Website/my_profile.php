@@ -1,4 +1,6 @@
 <?php
+// Patient-only profile routing: open the Patient record linked to the current AppUser login; never let patient accounts choose another person's record.
+
 require_once __DIR__.'/app/bootstrap.php';require_login();
 if(account_role()!=='Patient')redirect('patients.php');
 $id=linked_patient_id();

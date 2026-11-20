@@ -1,5 +1,9 @@
 # OncoAtlas — BIOM9450 Cancer Research Portal
 
+> **Teaching-friendly code edition:** This branch starts from `feature/fixed-demo-password1234` and rewrites the **website portion** to be easier to read and present, using the style of the BIOM9450 PetStore assignment. PHP queries, form checks, AJAX and charts now have expanded comments and readable stages; the CSS is split into property-per-line rules. Database contents, stored model, prediction endpoints and model-side JavaScript are not changed. **Start with [docs/SIMPLIFIED_CODE_GUIDE.md](docs/SIMPLIFIED_CODE_GUIDE.md)** for a file-by-file explanation and manual test list.
+
+
+
 A functioning **PHP 8 + MySQL** research web application built around the exact tables in the provided `sample_data.sql` file. It uses custom HTML/CSS, vanilla JavaScript and AJAX (Fetch API). A random-forest model trained on TCGA data predicts cancer type from a patient's mutation profile (**Run prediction**); see `docs/PREDICTION.md`.
 
 **Important:** This is an academic demonstration, not a diagnostic or clinical system. The uploaded SQL explicitly states that its mutation observations come from TCGA while its patient display demographics are **synthetic**. The website flags synthetic demographics rather than presenting them as verified clinical data.

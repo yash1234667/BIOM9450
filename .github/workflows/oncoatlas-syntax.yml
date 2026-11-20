@@ -1,0 +1,18 @@
+name: OncoAtlas syntax checks
+on:
+  push:
+    branches:
+      - feature/petstore-style-simplified-website
+  pull_request:
+
+jobs:
+  syntax:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check PHP syntax
+        run: |
+          find OncoAtlas_BIOM9450_Website -name '*.php' -type f -print0 |
+            xargs -0 -n 1 php -l
+      - name: Check website JavaScript syntax
+        run: node --check OncoAtlas_BIOM9450_Website/assets/js/app.js
