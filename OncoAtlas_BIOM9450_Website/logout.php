@@ -1,4 +1,6 @@
 <?php
+// Logout: log the action and destroy the session so the browser must log in again.
+
 require_once __DIR__.'/app/bootstrap.php';
 if(signed_in()) audit('LOGOUT','AppUser',(string)app_user()['id']);
 $_SESSION=[];
