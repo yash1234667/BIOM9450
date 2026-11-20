@@ -48,39 +48,82 @@ function parse_mutation_upload(array $file,string $barcode): array {
 }
 
 function import_mutations(int $patientId, string $barcode, string $sampleType, array $rows): array {
-    $pdo=db();
-    $lock=(int)query_value("SELECT GET_LOCK('oncoatlas_mutation_import',10)");
-    if($lock!==1)throw new RuntimeException('Another mutation import is running. Try again.');
-    $added=0;$skipped=0;$newSample=false;
+    $conn = db();
+    // Prevent concurrent imports from choosing the same SourceRow number.
+    $lock = (int)query_value("SELECT GET_LOCK('oncoatlas_mutation_import',10)");
+    if ($lock !== 1) throw new RuntimeException('Another mutation import is running. Try again.');
+
+    $added = 0; $skipped = 0; $newSample = false;
+    $inTransaction = false;
     try {
-        $pdo->beginTransaction();
-        $sample=query_one('SELECT SampleID,PatientID FROM TumorSample WHERE TCGASampleBarcode=? FOR UPDATE',[$barcode]);
-        if($sample && (int)$sample['PatientID']!==$patientId)throw new RuntimeException('This sample barcode belongs to a different patient.');
-        if(!$sample){
-            $pdo->prepare('INSERT INTO TumorSample(PatientID,TCGASampleBarcode,SampleType) VALUES(?,?,?)')->execute([$patientId,$barcode,$sampleType]);
-            $sampleId=(int)$pdo->lastInsertId();$newSample=true;
-        } else {$sampleId=(int)$sample['SampleID'];}
-        $nextRow=(int)query_value('SELECT COALESCE(MAX(SourceRow),0) FROM SampleMutation')+1;
-        $findVariant=$pdo->prepare('SELECT VariantID FROM Variant WHERE GenomeBuild=? AND Chromosome=? AND MutationPosition=? AND EndPosition=? AND ReferenceAllele=? AND AlternateAllele=? LIMIT 1');
-        $upsertVariant=$pdo->prepare('INSERT INTO Variant(GenomeBuild,Chromosome,MutationPosition,EndPosition,ReferenceAllele,AlternateAllele,VariantKey) VALUES(?,?,?,?,?,?,?) ON DUPLICATE KEY UPDATE VariantID=LAST_INSERT_ID(VariantID)');
-        $upsertGene=$pdo->prepare('INSERT INTO Gene(GeneSymbol) VALUES(?) ON DUPLICATE KEY UPDATE GeneID=LAST_INSERT_ID(GeneID)');
-        $duplicate=$pdo->prepare('SELECT SampleMutationID FROM SampleMutation WHERE SampleID=? AND VariantID=? AND GeneID=? AND MutationType=? AND VariantType=? AND ProteinChange <=> ? LIMIT 1');
-        $insert=$pdo->prepare('INSERT INTO SampleMutation(SampleID,GeneID,VariantID,MutationType,VariantType,Impact,ProteinChange,SourceRow) VALUES(?,?,?,?,?,?,?,?)');
-        foreach($rows as [$gene,$build,$chr,$start,$end,$ref,$alt,$classification,$type,$impact,$protein]) {
-            $upsertGene->execute([$gene]);$geneId=(int)$pdo->lastInsertId();
-            $findVariant->execute([$build,$chr,$start,$end,$ref,$alt]);$variantId=$findVariant->fetchColumn();
-            if($variantId===false){
-                $key=hash('sha256',json_encode([$build,$chr,(string)$start,(string)$end,$ref,$alt],JSON_UNESCAPED_SLASHES));
-                $upsertVariant->execute([$build,$chr,$start,$end,$ref,$alt,$key]);$variantId=(int)$pdo->lastInsertId();
-            }
-            $duplicate->execute([$sampleId,$variantId,$geneId,$classification,$type,$protein]);
-            if($duplicate->fetchColumn()!==false){$skipped++;continue;}
-            $insert->execute([$sampleId,$geneId,$variantId,$classification,$type,$impact,$protein,$nextRow++]);$added++;
+        $conn->begin_transaction();
+        $inTransaction = true;
+        $sample = query_one(
+            'SELECT SampleID,PatientID FROM TumorSample WHERE TCGASampleBarcode=? FOR UPDATE',
+            [$barcode]
+        );
+        if ($sample && (int)$sample['PatientID'] !== $patientId) {
+            throw new RuntimeException('This sample barcode belongs to a different patient.');
         }
-        $pdo->commit();
+        if (!$sample) {
+            execute_sql(
+                'INSERT INTO TumorSample(PatientID,TCGASampleBarcode,SampleType) VALUES(?,?,?)',
+                [$patientId,$barcode,$sampleType]
+            );
+            $sampleId = (int)$conn->insert_id;
+            $newSample = true;
+        } else {
+            $sampleId = (int)$sample['SampleID'];
+        }
+
+        $nextRow = (int)query_value('SELECT COALESCE(MAX(SourceRow),0) FROM SampleMutation') + 1;
+
+        foreach ($rows as [$gene,$build,$chr,$start,$end,$ref,$alt,$classification,$type,$impact,$protein]) {
+            // Create or find the gene; LAST_INSERT_ID returns its ID either way.
+            execute_sql(
+                'INSERT INTO Gene(GeneSymbol) VALUES(?) ON DUPLICATE KEY UPDATE GeneID=LAST_INSERT_ID(GeneID)',
+                [$gene]
+            );
+            $geneId = (int)$conn->insert_id;
+
+            $variantId = query_value(
+                'SELECT VariantID FROM Variant WHERE GenomeBuild=? AND Chromosome=? AND MutationPosition=? AND EndPosition=? AND ReferenceAllele=? AND AlternateAllele=? LIMIT 1',
+                [$build,$chr,$start,$end,$ref,$alt]
+            );
+            if ($variantId === false) {
+                $key = hash('sha256',json_encode([$build,$chr,(string)$start,(string)$end,$ref,$alt],JSON_UNESCAPED_SLASHES));
+                execute_sql(
+                    'INSERT INTO Variant(GenomeBuild,Chromosome,MutationPosition,EndPosition,ReferenceAllele,AlternateAllele,VariantKey) VALUES(?,?,?,?,?,?,?) ON DUPLICATE KEY UPDATE VariantID=LAST_INSERT_ID(VariantID)',
+                    [$build,$chr,$start,$end,$ref,$alt,$key]
+                );
+                $variantId = (int)$conn->insert_id;
+            }
+
+            $existing = query_value(
+                'SELECT SampleMutationID FROM SampleMutation WHERE SampleID=? AND VariantID=? AND GeneID=? AND MutationType=? AND VariantType=? AND ProteinChange <=> ? LIMIT 1',
+                [$sampleId,(int)$variantId,$geneId,$classification,$type,$protein]
+            );
+            if ($existing !== false) {
+                $skipped++;
+                continue;
+            }
+
+            execute_sql(
+                'INSERT INTO SampleMutation(SampleID,GeneID,VariantID,MutationType,VariantType,Impact,ProteinChange,SourceRow) VALUES(?,?,?,?,?,?,?,?)',
+                [$sampleId,$geneId,(int)$variantId,$classification,$type,$impact,$protein,$nextRow++]
+            );
+            $added++;
+        }
+
+        $conn->commit();
+        $inTransaction = false;
         return ['added'=>$added,'skipped'=>$skipped,'sample'=>$sampleId,'newSample'=>$newSample];
-    } catch(Throwable $e){if($pdo->inTransaction())$pdo->rollBack();throw $e;}
-    finally {query_value("SELECT RELEASE_LOCK('oncoatlas_mutation_import')");}
+    } catch (Throwable $e) {
+        if ($inTransaction) $conn->rollback();
+        throw $e;
+    } finally {
+        query_value("SELECT RELEASE_LOCK('oncoatlas_mutation_import')");
+    }
 }
 
 if($_SERVER['REQUEST_METHOD']==='POST'){
@@ -97,7 +140,7 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
         audit('IMPORT_MUTATIONS','TumorSample',(string)$result['sample']);
         flash('Import complete: '.$result['added'].' mutation records added; '.$result['skipped'].' duplicates skipped.');
         redirect('patient.php?id='.$patientId);
-    } catch(Throwable $e){$err=$e instanceof PDOException?'Database error while importing. No partial mutation upload was committed.':$e->getMessage();error_log('Mutation import: '.$e->getMessage());audit('IMPORT_FAILED','TumorSample',null);}
+    } catch(Throwable $e){$err=$e instanceof mysqli_sql_exception?'Database error while importing. No partial mutation upload was committed.':$e->getMessage();error_log('Mutation import: '.$e->getMessage());audit('IMPORT_FAILED','TumorSample',null);}
 }
 start_page('Import mutations','upload.php','Add a mutation profile to a patient’s existing or new tumour sample.','DATA MANAGEMENT');
 ?>
