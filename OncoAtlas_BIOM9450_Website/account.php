@@ -18,9 +18,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         // Step 2: Check the existing password stored in AppUser.
         // password_verify compares a plain password with its bcrypt hash.
         $sql = 'SELECT Password FROM AppUser WHERE UserID = ?';
-        $stmt = db()->prepare($sql);
-        $stmt->execute([app_user()['id']]);
-        $account = $stmt->fetch(PDO::FETCH_ASSOC);
+        $stmt = sql_run($sql, [app_user()['id']]);
+        $account = $stmt->get_result()->fetch_assoc();
+        $stmt->close();
 
         if (!$account || !password_verify($currentPassword, $account['Password'])) {
             throw new RuntimeException('Current password is incorrect.');
@@ -40,8 +40,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         // Step 4: Hash the NEW password and update only this user.
         $hash = password_hash($newPassword, PASSWORD_BCRYPT);
         $sql = 'UPDATE AppUser SET Password = ? WHERE UserID = ?';
-        $stmt = db()->prepare($sql);
-        $stmt->execute([$hash, app_user()['id']]);
+        $stmt = sql_run($sql, [$hash, app_user()['id']]);
+        $stmt->close();
 
         // Step 5: Record the change and return to the account page.
         session_regenerate_id(true);
@@ -51,7 +51,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     } catch (Throwable $problem) {
         error_log('Change password: ' . $problem->getMessage());
-        if ($problem instanceof PDOException) {
+        if ($problem instanceof mysqli_sql_exception) {
             $error = 'Unable to update password.';
         } else {
             $error = $problem->getMessage();

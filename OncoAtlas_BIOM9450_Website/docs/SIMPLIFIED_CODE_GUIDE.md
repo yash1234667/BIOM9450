@@ -21,7 +21,7 @@ The key teaching style is taken from your PetStore assignment:
 
 | Group | Files | What to explain in your demonstration |
 |---|---|---|
-| 1. Setup | \`config/config.php\`, \`app/bootstrap.php\` | How PDO connects to MySQL; sessions; prepared statements and roles |
+| 1. Setup | \`config/config.php\`, \`app/bootstrap.php\` | How MySQLi connects to MySQL; sessions; prepared statements and roles |
 | 2. Shared HTML | \`app/layout.php\`, \`assets/css/style.css\` | Header/sidebar/footer functions, CSS classes and mobile design |
 | 3. Login | \`login.php\`, \`logout.php\`, \`database/demo_password1234.sql\` | \`POST\`, \`SELECT\`, \`password_verify()\`, sessions and logging out |
 | 4. Dashboard | \`dashboard.php\`, \`api/stats.php\`, \`assets/js/app.js\` | Counts, GROUP BY, JSON and charts |
@@ -43,8 +43,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $error = 'Please enter a name.';
     } else {
         // Use ? rather than joining user input into the SQL query.
-        $stmt = db()->prepare('INSERT INTO Example (Name) VALUES (?)');
-        $stmt->execute([$name]);
+        $stmt = sql_run('INSERT INTO Example (Name) VALUES (?)', [$name]);
+        $stmt->close();
     }
 }
 \`\`\`
@@ -94,7 +94,7 @@ This avoids repeating patient information on every mutation row and illustrates 
 
 Mutation imports are inherently more complicated: one input row may require identifying a gene, identifying a genomic variant, ensuring the tumour sample belongs to the selected patient, and inserting the mutation. Transactions and duplicate checks protect the research database. They are **not** removed merely to make the code shorter.
 
-Similarly, the project keeps **PDO** instead of rewriting all pages to MySQLi because the prediction integration depends on the existing PDO connection.
+Regular website pages now use **MySQLi**. The unchanged prediction model still calls a **PDO** function, so that connection has been separated into `app/model_db.php`. Details: `docs/MYSQLI_MIGRATION.md`.
 
 The JavaScript still includes response-order checks, escaping of displayed data, and pagination; these are explained in comments rather than removed.
 
