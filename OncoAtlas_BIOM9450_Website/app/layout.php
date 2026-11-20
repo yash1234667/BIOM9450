@@ -1,5 +1,10 @@
 <?php
-require_once __DIR__.'/bootstrap.php';
+// Reusable website layout (equivalent to PetStore's apps/layout.php).
+// start_page() prints the opening HTML, sidebar and heading.
+// end_page() prints the closing tags and footer.
+// Every page shares this markup so navigation looks consistent.
+require_once __DIR__ . '/bootstrap.php';
+// Return a small SVG icon by name (the graphics are not PHP logic).
 function icon(string $name): string {
     $paths = [
       'grid'=>'<rect x="3" y="3" width="7" height="7" rx="1.4"/><rect x="14" y="3" width="7" height="7" rx="1.4"/><rect x="3" y="14" width="7" height="7" rx="1.4"/><rect x="14" y="14" width="7" height="7" rx="1.4"/>',
@@ -21,10 +26,14 @@ function icon(string $name): string {
     ];
     return '<svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'.($paths[$name]??$paths['grid']).'</svg>';
 }
+// Build the page navigation according to the signed-in user's role.
+// $active highlights the current menu item.
 function start_page(string $title, string $active, string $description='', string $overline='RESEARCH WORKSPACE'): void {
     require_login();
-    $user=app_user();
-    $nav=[
+    $user = app_user();
+
+    // Each item is: [destination PHP file, menu label, icon name].
+    $nav = [
         ['dashboard.php','Overview','grid'],
         ['patients.php','Patients','users'],
         ['mutations.php','Mutation explorer','dna'],
@@ -38,30 +47,154 @@ function start_page(string $title, string $active, string $description='', strin
         ['activity.php','Activity log','log'],
         ['account.php','My account','shield'],
     ];
-    if (account_role()==='Patient') {
-        $nav=[['dashboard.php','Overview','grid'],['my_profile.php','My profile','users'],['predictions.php','Predictions','spark'],['account.php','My account','shield']];
+    // Patients see only their own profile, saved results and account page.
+    if (account_role() === 'Patient') {
+        $nav = [
+            ['dashboard.php', 'Overview', 'grid'],
+            ['my_profile.php', 'My profile', 'users'],
+            ['predictions.php', 'Predictions', 'spark'],
+            ['account.php', 'My account', 'shield']
+        ];
     } elseif (!is_researcher()) {
-        $nav=array_values(array_filter($nav,fn($x)=>$x[0]!=='analytics.php'));
+        // Oncologists have the professional pages except researcher analytics.
+        // A normal foreach loop is easier to follow than array_filter().
+        $visibleMenu = [];
+
+        foreach ($nav as $item) {
+            if ($item[0] !== 'analytics.php') {
+                $visibleMenu[] = $item;
+            }
+        }
+
+        $nav = $visibleMenu;
     }
-    $flash=flash_take();
+
+    // A flash message is displayed once after redirecting to another page.
+    $flash = flash_take();
     ?>
-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#0d1630"><title><?=h($title)?> · OncoAtlas</title><link rel="stylesheet" href="assets/css/style.css"><script src="assets/js/app.js" defer></script></head>
-<body><div class="shell">
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#0d1630">
+<title>
+<?=h($title)?> · OncoAtlas</title>
+<link rel="stylesheet" href="assets/css/style.css">
+<script src="assets/js/app.js" defer>
+</script>
+</head>
+<body>
+<div class="shell">
 <aside class="sidebar" id="sidebar">
-  <a class="brand" href="dashboard.php"><span class="brand-symbol"><?=icon('dna')?></span><span><strong>onco<span>atlas.</span></strong><small>CANCER GENOMICS</small></span></a>
+  <a class="brand" href="dashboard.php">
+<span class="brand-symbol">
+<?=icon('dna')?>
+</span>
+<span>
+<strong>onco<span>atlas.</span>
+</strong>
+<small>CANCER GENOMICS</small>
+</span>
+</a>
   <div class="nav-caption">WORKSPACE</div>
   <nav aria-label="Main navigation" class="nav-list">
-  <?php foreach ($nav as $item): ?><a class="nav-link <?= $active===$item[0]?'selected':'' ?>" href="<?=h($item[0])?>"><?=icon($item[2])?><span><?=h($item[1])?></span><?php if($active===$item[0]):?><span class="nav-dot"></span><?php endif;?></a><?php endforeach;?></nav>
-  <div class="sidebar-end"><div class="sidebar-note"><span class="live-dot"></span><div><strong>Research demo</strong><small>TCGA · PanCancer Atlas</small></div></div><a href="logout.php" class="nav-link"><?=icon('logout')?>Sign out</a></div>
+  <?php foreach ($nav as $item): ?>
+<a class="nav-link <?= $active===$item[0]?'selected':'' ?>" href="<?=h($item[0])?>">
+<?=icon($item[2])?>
+<span>
+<?=h($item[1])?>
+</span>
+<?php if($active===$item[0]):?>
+<span class="nav-dot">
+</span>
+<?php endif;?>
+</a>
+<?php endforeach;?>
+</nav>
+  <div class="sidebar-end">
+<div class="sidebar-note">
+<span class="live-dot">
+</span>
+<div>
+<strong>Research demo</strong>
+<small>TCGA · PanCancer Atlas</small>
+</div>
+</div>
+<a href="logout.php" class="nav-link">
+<?=icon('logout')?>Sign out</a>
+</div>
 </aside>
-<div class="main-column"><header class="topbar"><button class="menu-toggle" id="menuToggle" type="button" aria-label="Toggle navigation">☰</button><span class="breadcrumb">Research workspace <span>/</span> <b><?=h($title)?></b></span><div class="user-identity"><span class="research-chip"><span class="live-dot"></span> Academic prototype</span><span class="avatar"><?=h(strtoupper(substr((string)$user['name'],0,1)))?></span><div class="user-meta"><b><?=h($user['name'])?></b><small><?=h($user['role'])?></small></div></div></header>
-<main class="content"><header class="page-heading"><div><div class="overline"><?=h($overline)?></div><h1><?=h($title)?></h1><?php if($description!==''):?><p><?=h($description)?></p><?php endif;?></div></header>
-<?php if($flash):?><div class="notice <?=h($flash['type'])?>" role="status"><?=h($flash['text'])?></div><?php endif; ?>
+<div class="main-column">
+<header class="topbar">
+<button class="menu-toggle" id="menuToggle" type="button" aria-label="Toggle navigation">☰</button>
+<span class="breadcrumb">Research workspace <span>/</span> <b>
+<?=h($title)?>
+</b>
+</span>
+<div class="user-identity">
+<span class="research-chip">
+<span class="live-dot">
+</span> Academic prototype</span>
+<span class="avatar">
+<?=h(strtoupper(substr((string)$user['name'],0,1)))?>
+</span>
+<div class="user-meta">
+<b>
+<?=h($user['name'])?>
+</b>
+<small>
+<?=h($user['role'])?>
+</small>
+</div>
+</div>
+</header>
+<main class="content">
+<header class="page-heading">
+<div>
+<div class="overline">
+<?=h($overline)?>
+</div>
+<h1>
+<?=h($title)?>
+</h1>
+<?php if($description!==''):?>
+<p>
+<?=h($description)?>
+</p>
+<?php endif;?>
+</div>
+</header>
+<?php if($flash):?>
+<div class="notice <?=h($flash['type'])?>" role="status">
+<?=h($flash['text'])?>
+</div>
+<?php endif; ?>
 <?php }
 function end_page(): void { ?>
-</main><footer class="site-footer"><span>OncoAtlas · BIOM9450 academic project</span><span>Research data only · Not for clinical diagnosis</span></footer></div></div></body></html>
+</main>
+<footer class="site-footer">
+<span>OncoAtlas · BIOM9450 academic project</span>
+<span>Research data only · Not for clinical diagnosis</span>
+</footer>
+</div>
+</div>
+</body>
+</html>
 <?php }
-function empty_state(string $headline, string $message): void { ?><div class="empty-state"><span class="empty-icon"><?=icon('layers')?></span><strong><?=h($headline)?></strong><p><?=h($message)?></p></div><?php }
+function empty_state(string $headline, string $message): void { ?>
+<div class="empty-state">
+<span class="empty-icon">
+<?=icon('layers')?>
+</span>
+<strong>
+<?=h($headline)?>
+</strong>
+<p>
+<?=h($message)?>
+</p>
+</div>
+<?php }
 function cohort_options(?string $selected=''): void {
     foreach (query_rows('SELECT CancerTypeID,StudyCode,DiagnosisLabel FROM CancerType ORDER BY CancerTypeID') as $c) {
         echo '<option value="'.h($c['CancerTypeID']).'"'.((string)$c['CancerTypeID']===(string)$selected?' selected':'').'>'.h(strtoupper($c['StudyCode']).' · '.$c['DiagnosisLabel']).'</option>';
